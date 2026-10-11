@@ -1,0 +1,10 @@
+{
+  "recommendations": [
+    "charliermarsh.ruff",
+    "vscodevim.vim",
+    "pkief.material-icon-theme",
+    "mhutchie.git-graph",
+    "eamodio.gitlens",
+    "ms-python.python"
+  ]
+}
