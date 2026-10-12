@@ -5,6 +5,7 @@
     "pkief.material-icon-theme",
     "mhutchie.git-graph",
     "eamodio.gitlens",
-    "ms-python.python"
+    "ms-python.python",
+    "fastapilabs.fastapi-vscode"
   ]
 }
