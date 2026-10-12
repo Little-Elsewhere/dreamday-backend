@@ -1,0 +1,12 @@
+name: dreamday-backend-dev
+
+services:
+  api:
+    build:
+      context: ../..
+      dockerfile: docker/dev/Dockerfile
+    ports:
+      - "8000:8000"
+    volumes:
+      - ../..:/app
+    init: true
