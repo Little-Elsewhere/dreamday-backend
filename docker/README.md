@@ -1,7 +1,6 @@
 # Docker
 
-The app uses the Python version declared in `pyproject.toml` and installs dependencies from `uv.lock`.
-The development and production environments have separate Dockerfiles.
+Development and production have separate Dockerfiles. Both install locked dependencies from `uv.lock`; production omits development dependencies and runs as a non-root user.
 
 ## Development
 
@@ -32,4 +31,3 @@ docker compose -f docker/prod/compose.yaml logs -f
 docker compose -f docker/prod/compose.yaml down
 ```
 
-`pyproject.toml` currently requires Python `>=3.15`, so both Dockerfiles use the Python 3.15 release-candidate image until the stable image is available.
