@@ -1,1 +1,0 @@
-"""Dreamday backend application package."""
