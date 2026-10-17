@@ -1,6 +1,16 @@
 name: dreamday-backend-prod
 
 services:
+  migrate:
+    image: dreamday-backend:prod
+    build:
+      context: ../..
+      dockerfile: docker/prod/Dockerfile
+    env_file:
+      - ../../.env
+    command: ["alembic", "upgrade", "head"]
+    restart: "no"
+
   api:
     image: dreamday-backend:prod
     build:
@@ -8,6 +18,9 @@ services:
       dockerfile: docker/prod/Dockerfile
     env_file:
       - ../../.env
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
     ports:
       - "8000:8000"
     restart: unless-stopped

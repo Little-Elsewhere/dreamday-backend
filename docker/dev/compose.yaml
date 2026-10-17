@@ -1,6 +1,38 @@
 name: dreamday-backend-dev
 
 services:
+  db:
+    image: postgres:18-alpine
+    env_file:
+      - ../../.env
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres18_data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  mailpit:
+    image: axllent/mailpit:latest
+    ports:
+      - "1025:1025"
+      - "8025:8025"
+
+  migrate:
+    build:
+      context: ../..
+      dockerfile: docker/dev/Dockerfile
+    env_file:
+      - ../../.env
+    command: ["alembic", "upgrade", "head"]
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: "no"
+
   api:
     build:
       context: ../..
@@ -11,4 +43,12 @@ services:
       - "8000:8000"
     volumes:
       - ../..:/app
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      mailpit:
+        condition: service_started
     init: true
+
+volumes:
+  postgres18_data:

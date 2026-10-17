@@ -3,9 +3,16 @@ name = "dreamday-backend"
 version = "0.1.0"
 requires-python = ">=3.15"
 dependencies = [
+    "aiosmtplib>=3.0.0",
+    "alembic>=1.13.0",
+    "asyncpg>=0.29.0",
+    "email-validator>=2.1.0",
     "fastapi[standard]>=0.143.0",
+    "PyJWT>=2.8.0",
     "pydantic>=2.14.0",
     "pydantic-settings>=2.15.0",
+    "pwdlib[argon2]>=0.2.1",
+    "sqlalchemy[asyncio]>=2.0.0",
 ]
 
 [dependency-groups]
