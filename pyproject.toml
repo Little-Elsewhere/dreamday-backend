@@ -20,6 +20,7 @@ dev = [
     "commitizen>=4.10.0",
     "detect-secrets>=1.5.0",
     "httpx>=0.28.0",
+    "import-linter>=2.0",
     "pytest>=8.0.0",
     "pytest-asyncio>=0.24.0",
     "ruff>=0.17.0",
@@ -85,6 +86,89 @@ default = false
 
 [tool.fastapi]
 entrypoint = "app.main:app"
+
+[tool.importlinter]
+root_package = "app"
+include_external_packages = true
+
+[[tool.importlinter.contracts]]
+id = "layers"
+name = "Layered architecture"
+type = "layers"
+layers = [
+  "app.api",
+  "app.services",
+  "app.repositories",
+  "app.models",
+]
+
+[[tool.importlinter.contracts]]
+id = "no-fastapi-in-domain"
+name = "Domain layers must not import FastAPI"
+type = "forbidden"
+source_modules = [
+  "app.core",
+  "app.services",
+  "app.repositories",
+  "app.models",
+  "app.schemas",
+  "app.messages",
+]
+forbidden_modules = ["fastapi"]
+
+[[tool.importlinter.contracts]]
+id = "core-is-foundation"
+name = "Core must not import application layers"
+type = "forbidden"
+source_modules = ["app.core"]
+forbidden_modules = [
+  "app.api",
+  "app.services",
+  "app.repositories",
+  "app.models",
+  "app.schemas",
+  "app.messages",
+]
+
+[[tool.importlinter.contracts]]
+id = "schemas-are-pure"
+name = "Schemas must stay free of ORM and application layers"
+type = "forbidden"
+source_modules = ["app.schemas"]
+forbidden_modules = [
+  "app.api",
+  "app.services",
+  "app.repositories",
+  "app.models",
+  "app.messages",
+  "app.core",
+]
+
+[[tool.importlinter.contracts]]
+id = "models-are-pure"
+name = "Models must not import schemas or upper layers"
+type = "forbidden"
+source_modules = ["app.models"]
+forbidden_modules = [
+  "app.api",
+  "app.services",
+  "app.repositories",
+  "app.schemas",
+  "app.messages",
+  "app.core",
+]
+
+[[tool.importlinter.contracts]]
+id = "repositories-boundaries"
+name = "Repositories must not import services, API, schemas, or messages"
+type = "forbidden"
+source_modules = ["app.repositories"]
+forbidden_modules = [
+  "app.api",
+  "app.services",
+  "app.schemas",
+  "app.messages",
+]
 
 [tool.ruff]
 target-version = "py315"
