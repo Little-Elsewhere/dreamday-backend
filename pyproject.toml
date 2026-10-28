@@ -17,8 +17,71 @@ dependencies = [
 
 [dependency-groups]
 dev = [
+    "commitizen>=4.10.0",
+    "detect-secrets>=1.5.0",
+    "httpx>=0.28.0",
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.24.0",
     "ruff>=0.17.0",
 ]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+pythonpath = ["."]
+testpaths = ["tests"]
+
+[tool.commitizen]
+name = "cz_customize"
+allowed_prefixes = [
+  "Merge",
+  "Revert",
+  "Pull request",
+  "fixup!",
+  "squash!",
+  "amend!",
+]
+
+[tool.commitizen.customize]
+message_template = "{{change_type}}{% if scope %}({{scope}}){% endif %}{% if is_breaking_change %}!{% endif %}: {{message}}"
+example = "feat(auth): add refresh token rotation"
+schema = "<type>[optional scope][optional !]: <description>"
+schema_pattern = "(feat|fix|perf|deps|revert|docs|style|refactor|test|build|ci|chore)(\\(.+\\))?(!)?:\\s.+"
+
+[[tool.commitizen.customize.questions]]
+type = "list"
+name = "change_type"
+message = "Select the type of change"
+choices = [
+  {value = "feat", name = "feat: A new feature"},
+  {value = "fix", name = "fix: A bug fix"},
+  {value = "perf", name = "perf: A performance improvement"},
+  {value = "deps", name = "deps: A dependency update"},
+  {value = "revert", name = "revert: Revert a previous commit"},
+  {value = "docs", name = "docs: Documentation only"},
+  {value = "style", name = "style: Formatting / style only"},
+  {value = "refactor", name = "refactor: Neither fixes a bug nor adds a feature"},
+  {value = "test", name = "test: Adding or correcting tests"},
+  {value = "build", name = "build: Build system or packaging"},
+  {value = "ci", name = "ci: CI configuration"},
+  {value = "chore", name = "chore: Maintenance"},
+]
+
+[[tool.commitizen.customize.questions]]
+type = "input"
+name = "scope"
+message = "Scope (optional, press enter to skip)"
+
+[[tool.commitizen.customize.questions]]
+type = "input"
+name = "message"
+message = "Commit description"
+
+[[tool.commitizen.customize.questions]]
+type = "confirm"
+name = "is_breaking_change"
+message = "Is this a breaking change?"
+default = false
 
 [tool.fastapi]
 entrypoint = "app.main:app"
