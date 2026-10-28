@@ -4,7 +4,7 @@ import jwt
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
-from app.core.database import DatabaseSession
+from app.api.dependencies.database import DatabaseSession
 from app.core.security import decode_access_token
 from app.messages.auth import AuthMessages
 from app.models.auth import User

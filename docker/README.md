@@ -121,6 +121,7 @@ Pull requests to `develop` and `main` run `.github/workflows/ci.yml`:
 - Conventional Commits via Commitizen (`pre-commit` commit-msg + CI `cz check`)
 - `uv run ruff format --check .`
 - `uv run ruff check .`
+- `uv run lint-imports` (import-linter architecture contracts)
 - `detect-secrets-hook` against `.secrets.baseline`
 - `uv run pytest`
 
