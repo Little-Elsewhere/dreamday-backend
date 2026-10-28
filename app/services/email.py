@@ -15,13 +15,13 @@ async def send_verification_email(email: str, token: str) -> None:
   verification_url = urlsplit(str(settings.email_verification_url))
   query = dict(parse_qsl(verification_url.query, keep_blank_values=True))
   query['token'] = token
-  link = urlunsplit(
-    verification_url._replace(query=urlencode(query))
-  )
+  link = urlunsplit(verification_url._replace(query=urlencode(query)))
 
-  subject = EMAIL_TEMPLATES.joinpath('verification_subject.txt').read_text(
-    encoding='utf-8'
-  ).strip()
+  subject = (
+    EMAIL_TEMPLATES.joinpath('verification_subject.txt')
+    .read_text(encoding='utf-8')
+    .strip()
+  )
   body_template = EMAIL_TEMPLATES.joinpath('verification_body.txt').read_text(
     encoding='utf-8'
   )

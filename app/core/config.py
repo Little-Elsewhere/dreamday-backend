@@ -70,9 +70,8 @@ class Settings(BaseSettings):
         'Replace the example JWT_SECRET_KEY before starting the app'
       )
     has_smtp_username = bool(self.smtp_username)
-    has_smtp_password = (
-      self.smtp_password is not None
-      and bool(self.smtp_password.get_secret_value())
+    has_smtp_password = self.smtp_password is not None and bool(
+      self.smtp_password.get_secret_value()
     )
     if has_smtp_username != has_smtp_password:
       raise ValueError(

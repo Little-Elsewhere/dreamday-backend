@@ -94,7 +94,7 @@ If the message does not arrive, `POST /resend-verification` accepts `{"email":"p
 Request bodies:
 
 ```json
-{"email":"person@example.com","password":"a-long-password-at-least-12"}
+{"email":"person@example.com","password":"a-long-password-at-least-12"}  # pragma: allowlist secret
 ```
 
 ```json
@@ -113,6 +113,20 @@ To run the app outside Compose, set `DB_HOST=localhost`, `DB_PORT`, the `POSTGRE
 uv run alembic upgrade head
 uv run fastapi dev
 ```
+
+## CI hard gates
+
+Pull requests to `develop` and `main` run `.github/workflows/ci.yml`:
+
+- Conventional Commits via Commitizen (`pre-commit` commit-msg + CI `cz check`)
+- `uv run ruff format --check .`
+- `uv run ruff check .`
+- `detect-secrets-hook` against `.secrets.baseline`
+- `uv run pytest`
+
+After cloning, install hooks with `pre-commit install` (installs `pre-commit` and `commit-msg`). Optional guided commits: `uv run cz commit`.
+
+PRs to `main` also run `.github/workflows/cd.yml`, which builds the production Docker image without pushing it.
 
 ## Production
 
