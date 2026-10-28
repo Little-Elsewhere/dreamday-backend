@@ -92,17 +92,61 @@ root_package = "app"
 include_external_packages = true
 
 [[tool.importlinter.contracts]]
-id = "auth-layers"
-name = "Auth domain layered architecture"
+id = "domain-layers"
+name = "Domain packages keep internal layering"
 type = "layers"
+containers = ["app.auth"]
 layers = [
+  "router",
+  "dependencies",
+  "service",
+  "(email) | repositories",
+  "models",
+]
+
+[[tool.importlinter.contracts]]
+id = "auth-public-api"
+name = "Other domains may only use auth.dependencies"
+type = "forbidden"
+allow_indirect_imports = true
+source_modules = ["app.health"]
+forbidden_modules = [
   "app.auth.router",
+  "app.auth.service",
+  "app.auth.email",
+  "app.auth.repositories",
+  "app.auth.models",
+  "app.auth.schemas",
+  "app.auth.messages",
+]
+broken_contract_guidance = """
+Cross-domain auth access must go through app.auth.dependencies
+(for example CurrentUser). Do not import auth routers, services,
+repositories, models, schemas, messages, or email helpers from
+sibling domains.
+"""
+
+[[tool.importlinter.contracts]]
+id = "api-mounts-routers-only"
+name = "API aggregator may only mount domain routers"
+type = "forbidden"
+allow_indirect_imports = true
+source_modules = ["app.api"]
+forbidden_modules = [
   "app.auth.dependencies",
   "app.auth.service",
   "app.auth.email",
   "app.auth.repositories",
   "app.auth.models",
+  "app.auth.schemas",
+  "app.auth.messages",
+  "app.shared",
+  "app.core",
 ]
+broken_contract_guidance = """
+app.api.router should only include_router(...) domain routers such as
+app.auth.router and app.health.router.
+"""
 
 [[tool.importlinter.contracts]]
 id = "no-fastapi-in-domain"
