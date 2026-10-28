@@ -124,7 +124,14 @@ The backend is organized as **domain packages**:
 - `app/shared/` — cross-domain HTTP/response helpers (`DatabaseSession`, response envelopes)
 - `app/api/router.py` — mounts domain routers only
 
-Within `auth`, dependencies flow `router → dependencies → service → repositories → models`.
+Within a rich domain such as `auth`, dependencies flow
+`router → dependencies → service → (email | repositories) → models`.
+
+Cross-domain imports must use each domain's public surface only. For auth,
+sibling packages may import `app.auth.dependencies` (for example `CurrentUser`)
+and must not import auth routers, services, repositories, models, schemas,
+messages, or email helpers directly. `app.api` may only mount domain routers.
+These rules are enforced by `uv run lint-imports`.
 
 ## CI hard gates
 
