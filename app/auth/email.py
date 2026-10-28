@@ -8,7 +8,7 @@ import aiosmtplib
 
 from app.core.config import settings
 
-EMAIL_TEMPLATES = files('app.templates.email')
+EMAIL_TEMPLATES = files('app.auth.templates.email')
 
 
 async def send_verification_email(email: str, token: str) -> None:

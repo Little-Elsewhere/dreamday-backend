@@ -4,7 +4,7 @@ from uuid import UUID
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.auth import EmailVerificationToken
+from app.auth.models import EmailVerificationToken
 
 
 class EmailVerificationTokenRepository:

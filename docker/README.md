@@ -114,6 +114,18 @@ uv run alembic upgrade head
 uv run fastapi dev
 ```
 
+## Application layout
+
+The backend is organized as **domain packages**:
+
+- `app/auth/` — authentication (router, service, repositories, models, schemas, messages, email)
+- `app/health/` — liveness endpoint
+- `app/core/` — shared foundation (settings, DB engine, security helpers, SQLAlchemy `Base`)
+- `app/shared/` — cross-domain HTTP/response helpers (`DatabaseSession`, response envelopes)
+- `app/api/router.py` — mounts domain routers only
+
+Within `auth`, dependencies flow `router → dependencies → service → repositories → models`.
+
 ## CI hard gates
 
 Pull requests to `develop` and `main` run `.github/workflows/ci.yml`:

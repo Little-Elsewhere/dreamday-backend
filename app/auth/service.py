@@ -9,6 +9,14 @@ import anyio
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.auth.email import send_verification_email
+from app.auth.models import EmailVerificationToken, RefreshToken, User
+from app.auth.repositories.email_verification_tokens import (
+  EmailVerificationTokenRepository,
+)
+from app.auth.repositories.refresh_tokens import RefreshTokenRepository
+from app.auth.repositories.users import UserRepository
+from app.auth.schemas import TokenResponse
 from app.core.config import settings
 from app.core.database import SessionFactory
 from app.core.security import (
@@ -17,14 +25,6 @@ from app.core.security import (
   hash_secret,
   verify_password,
 )
-from app.models.auth import EmailVerificationToken, RefreshToken, User
-from app.repositories.email_verification_tokens import (
-  EmailVerificationTokenRepository,
-)
-from app.repositories.refresh_tokens import RefreshTokenRepository
-from app.repositories.users import UserRepository
-from app.schemas.auth import TokenResponse
-from app.services.email import send_verification_email
 
 logger = logging.getLogger(__name__)
 
