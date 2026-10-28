@@ -5,8 +5,9 @@ from alembic import context
 from sqlalchemy import pool
 from sqlalchemy.ext.asyncio import create_async_engine
 
+from app.auth import models as auth_models  # noqa: F401
+from app.core.base import Base
 from app.core.config import settings
-from app.models import Base
 
 config = context.config
 if config.config_file_name is not None:

@@ -1,8 +1,8 @@
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Response, status
 
-from app.api.dependencies.auth import AuthServiceDep, CurrentUser
-from app.messages.auth import AuthMessages
-from app.schemas.auth import (
+from app.auth.dependencies import AuthServiceDep, CurrentUser
+from app.auth.messages import AuthMessages
+from app.auth.schemas import (
   EmailRequest,
   EmailVerificationRequest,
   LoginRequest,
@@ -12,13 +12,13 @@ from app.schemas.auth import (
   TokenResponse,
   UserResponse,
 )
-from app.schemas.responses import MessageResponse
-from app.services.auth import (
+from app.auth.service import (
   AuthServiceError,
   AuthServiceErrorCode,
   VerificationEmail,
   deliver_verification_email_in_background,
 )
+from app.shared.responses import MessageResponse
 
 router = APIRouter(prefix='/api/v1/auth', tags=['auth'])
 

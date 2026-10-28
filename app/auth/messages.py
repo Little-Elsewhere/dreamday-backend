@@ -1,4 +1,4 @@
-from app.schemas.responses import MessageResponse
+from app.shared.responses import MessageResponse
 
 
 class AuthMessages:

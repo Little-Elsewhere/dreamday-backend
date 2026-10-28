@@ -4,12 +4,12 @@ import jwt
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
-from app.api.dependencies.database import DatabaseSession
+from app.auth.messages import AuthMessages
+from app.auth.models import User
+from app.auth.repositories.users import UserRepository
+from app.auth.service import AuthService
 from app.core.security import decode_access_token
-from app.messages.auth import AuthMessages
-from app.models.auth import User
-from app.repositories.users import UserRepository
-from app.services.auth import AuthService
+from app.shared.dependencies import DatabaseSession
 
 bearer_scheme = HTTPBearer(auto_error=False)
 

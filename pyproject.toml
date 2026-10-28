@@ -92,82 +92,108 @@ root_package = "app"
 include_external_packages = true
 
 [[tool.importlinter.contracts]]
-id = "layers"
-name = "Layered architecture"
+id = "auth-layers"
+name = "Auth domain layered architecture"
 type = "layers"
 layers = [
-  "app.api",
-  "app.services",
-  "app.repositories",
-  "app.models",
+  "app.auth.router",
+  "app.auth.dependencies",
+  "app.auth.service",
+  "app.auth.email",
+  "app.auth.repositories",
+  "app.auth.models",
 ]
 
 [[tool.importlinter.contracts]]
 id = "no-fastapi-in-domain"
-name = "Domain layers must not import FastAPI"
+name = "Non-HTTP modules must not import FastAPI"
 type = "forbidden"
 source_modules = [
   "app.core",
-  "app.services",
-  "app.repositories",
-  "app.models",
-  "app.schemas",
-  "app.messages",
+  "app.auth.service",
+  "app.auth.email",
+  "app.auth.repositories",
+  "app.auth.models",
+  "app.auth.schemas",
+  "app.auth.messages",
+  "app.shared.responses",
 ]
 forbidden_modules = ["fastapi"]
 
 [[tool.importlinter.contracts]]
 id = "core-is-foundation"
-name = "Core must not import application layers"
+name = "Core must not import application packages"
 type = "forbidden"
 source_modules = ["app.core"]
 forbidden_modules = [
   "app.api",
-  "app.services",
-  "app.repositories",
-  "app.models",
-  "app.schemas",
-  "app.messages",
+  "app.auth",
+  "app.health",
+  "app.shared",
 ]
 
 [[tool.importlinter.contracts]]
-id = "schemas-are-pure"
-name = "Schemas must stay free of ORM and application layers"
+id = "auth-schemas-pure"
+name = "Auth schemas must stay free of ORM and application layers"
 type = "forbidden"
-source_modules = ["app.schemas"]
+source_modules = ["app.auth.schemas"]
 forbidden_modules = [
   "app.api",
-  "app.services",
-  "app.repositories",
-  "app.models",
-  "app.messages",
+  "app.auth.router",
+  "app.auth.dependencies",
+  "app.auth.service",
+  "app.auth.email",
+  "app.auth.repositories",
+  "app.auth.models",
+  "app.auth.messages",
   "app.core",
+  "app.health",
 ]
 
 [[tool.importlinter.contracts]]
-id = "models-are-pure"
-name = "Models must not import schemas or upper layers"
+id = "auth-models-pure"
+name = "Auth models must not import schemas or upper layers"
 type = "forbidden"
-source_modules = ["app.models"]
+source_modules = ["app.auth.models"]
 forbidden_modules = [
   "app.api",
-  "app.services",
-  "app.repositories",
-  "app.schemas",
-  "app.messages",
-  "app.core",
+  "app.auth.router",
+  "app.auth.dependencies",
+  "app.auth.service",
+  "app.auth.email",
+  "app.auth.repositories",
+  "app.auth.schemas",
+  "app.auth.messages",
+  "app.shared",
+  "app.health",
 ]
 
 [[tool.importlinter.contracts]]
-id = "repositories-boundaries"
-name = "Repositories must not import services, API, schemas, or messages"
+id = "auth-repositories-boundaries"
+name = "Auth repositories must not import HTTP or service layers"
 type = "forbidden"
-source_modules = ["app.repositories"]
+source_modules = ["app.auth.repositories"]
 forbidden_modules = [
   "app.api",
-  "app.services",
-  "app.schemas",
-  "app.messages",
+  "app.auth.router",
+  "app.auth.dependencies",
+  "app.auth.service",
+  "app.auth.email",
+  "app.auth.schemas",
+  "app.auth.messages",
+  "app.shared",
+  "app.health",
+]
+
+[[tool.importlinter.contracts]]
+id = "shared-is-kernel"
+name = "Shared must not import domain packages"
+type = "forbidden"
+source_modules = ["app.shared"]
+forbidden_modules = [
+  "app.api",
+  "app.auth",
+  "app.health",
 ]
 
 [tool.ruff]
