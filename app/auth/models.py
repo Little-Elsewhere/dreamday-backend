@@ -66,6 +66,38 @@ class EmailVerificationToken(Base):
   )
 
 
+class PasswordResetToken(Base):
+  __tablename__ = 'password_reset_tokens'
+  __table_args__ = (
+    Index(
+      'ix_password_reset_tokens_user_id_created_at',
+      'user_id',
+      'created_at',
+    ),
+  )
+
+  id: Mapped[UUID] = mapped_column(
+    Uuid(as_uuid=True), primary_key=True, default=uuid4
+  )
+  user_id: Mapped[UUID] = mapped_column(
+    Uuid(as_uuid=True),
+    ForeignKey('users.id', ondelete='CASCADE'),
+    nullable=False,
+  )
+  token_hash: Mapped[str] = mapped_column(
+    String(64), unique=True, nullable=False
+  )
+  expires_at: Mapped[datetime] = mapped_column(
+    DateTime(timezone=True), nullable=False
+  )
+  consumed_at: Mapped[datetime | None] = mapped_column(
+    DateTime(timezone=True), nullable=True
+  )
+  created_at: Mapped[datetime] = mapped_column(
+    DateTime(timezone=True), server_default=func.now(), nullable=False
+  )
+
+
 class RefreshToken(Base):
   __tablename__ = 'refresh_tokens'
   __table_args__ = (Index('ix_refresh_tokens_family_id', 'family_id'),)

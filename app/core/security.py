@@ -22,6 +22,30 @@ def hash_secret(secret: str) -> str:
   return sha256(secret.encode('utf-8')).hexdigest()
 
 
+def create_purpose_token(
+  *,
+  typ: str,
+  user_id: UUID,
+  email: str,
+  token_id: UUID,
+  issued_at: datetime,
+  expires_at: datetime,
+) -> str:
+  payload = {
+    'sub': str(user_id),
+    'email': email,
+    'typ': typ,
+    'jti': str(token_id),
+    'iat': int(issued_at.timestamp()),
+    'exp': int(expires_at.timestamp()),
+  }
+  return jwt.encode(
+    payload,
+    settings.jwt_secret_key.get_secret_value(),
+    algorithm='HS256',
+  )
+
+
 def create_access_token(user_id: UUID) -> str:
   now = datetime.now(UTC)
   expires_at = now + timedelta(minutes=settings.access_token_expire_minutes)

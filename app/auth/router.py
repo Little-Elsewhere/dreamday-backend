@@ -1,28 +1,36 @@
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Response, status
 
 from app.auth.dependencies import AuthServiceDep, CurrentUser
+from app.auth.email import send_password_reset_email, send_verification_email
 from app.auth.messages import AuthMessages
+from app.auth.models import EmailVerificationToken, PasswordResetToken
 from app.auth.schemas import (
   EmailRequest,
   EmailVerificationRequest,
   LoginRequest,
   LogoutRequest,
+  PasswordResetConfirmRequest,
   RefreshRequest,
   RegisterRequest,
   TokenResponse,
+  UpdatePasswordRequest,
   UserResponse,
 )
 from app.auth.service import (
   AuthServiceError,
   AuthServiceErrorCode,
-  VerificationEmail,
-  deliver_verification_email_in_background,
+  TokenEmail,
+  deliver_token_email_in_background,
 )
 from app.shared.responses import MessageResponse
 
 router = APIRouter(prefix='/api/v1/auth', tags=['auth'])
 
 _AUTH_ERROR_DETAILS = {
+  AuthServiceErrorCode.EMAIL_ALREADY_REGISTERED: (
+    status.HTTP_409_CONFLICT,
+    AuthMessages.EMAIL_ALREADY_REGISTERED,
+  ),
   AuthServiceErrorCode.INVALID_VERIFICATION_LINK: (
     status.HTTP_400_BAD_REQUEST,
     AuthMessages.INVALID_OR_EXPIRED_VERIFICATION_LINK,
@@ -43,6 +51,14 @@ _AUTH_ERROR_DETAILS = {
     status.HTTP_401_UNAUTHORIZED,
     AuthMessages.INVALID_OR_EXPIRED_REFRESH_TOKEN,
   ),
+  AuthServiceErrorCode.INVALID_PASSWORD_RESET_LINK: (
+    status.HTTP_400_BAD_REQUEST,
+    AuthMessages.INVALID_OR_EXPIRED_PASSWORD_RESET_LINK,
+  ),
+  AuthServiceErrorCode.INVALID_CURRENT_PASSWORD: (
+    status.HTTP_400_BAD_REQUEST,
+    AuthMessages.INVALID_CURRENT_PASSWORD,
+  ),
 }
 
 
@@ -60,16 +76,23 @@ def _http_exception_for_auth_error(error: AuthServiceError) -> HTTPException:
   )
 
 
-def _schedule_verification_email(
+def _schedule_token_email(
   background_tasks: BackgroundTasks,
-  verification_email: VerificationEmail | None,
+  token_email: TokenEmail | None,
+  *,
+  send,
+  model: type[EmailVerificationToken] | type[PasswordResetToken],
+  failure_log: str,
 ) -> None:
-  if verification_email is not None:
+  if token_email is not None:
     background_tasks.add_task(
-      deliver_verification_email_in_background,
-      verification_email.email,
-      verification_email.raw_token,
-      verification_email.token_hash,
+      deliver_token_email_in_background,
+      token_email.email,
+      token_email.raw_token,
+      token_email.token_hash,
+      send=send,
+      model=model,
+      failure_log=failure_log,
     )
 
 
@@ -83,10 +106,19 @@ async def register(
   background_tasks: BackgroundTasks,
   auth_service: AuthServiceDep,
 ) -> MessageResponse:
-  verification_email = await auth_service.register(
-    str(payload.email), payload.password
+  try:
+    verification_email = await auth_service.register(
+      str(payload.email), payload.password
+    )
+  except AuthServiceError as error:
+    raise _http_exception_for_auth_error(error) from error
+  _schedule_token_email(
+    background_tasks,
+    verification_email,
+    send=send_verification_email,
+    model=EmailVerificationToken,
+    failure_log='Could not send an email verification message',
   )
-  _schedule_verification_email(background_tasks, verification_email)
   return AuthMessages.REGISTRATION_ACCEPTED
 
 
@@ -103,7 +135,13 @@ async def resend_verification(
   verification_email = await auth_service.resend_verification(
     str(payload.email)
   )
-  _schedule_verification_email(background_tasks, verification_email)
+  _schedule_token_email(
+    background_tasks,
+    verification_email,
+    send=send_verification_email,
+    model=EmailVerificationToken,
+    failure_log='Could not send an email verification message',
+  )
   return AuthMessages.VERIFICATION_RESEND_ACCEPTED
 
 
@@ -120,6 +158,56 @@ async def verify_email(
   except AuthServiceError as error:
     raise _http_exception_for_auth_error(error) from error
   return AuthMessages.EMAIL_VERIFIED
+
+
+@router.post(
+  '/forgot-password',
+  response_model=MessageResponse,
+  status_code=status.HTTP_202_ACCEPTED,
+)
+async def forgot_password(
+  payload: EmailRequest,
+  background_tasks: BackgroundTasks,
+  auth_service: AuthServiceDep,
+) -> MessageResponse:
+  reset_email = await auth_service.forgot_password(str(payload.email))
+  _schedule_token_email(
+    background_tasks,
+    reset_email,
+    send=send_password_reset_email,
+    model=PasswordResetToken,
+    failure_log='Could not send a password reset message',
+  )
+  return AuthMessages.PASSWORD_RESET_EMAIL_ACCEPTED
+
+
+@router.post('/reset-password', response_model=MessageResponse)
+async def reset_password(
+  payload: PasswordResetConfirmRequest,
+  response: Response,
+  auth_service: AuthServiceDep,
+) -> MessageResponse:
+  response.headers['Cache-Control'] = 'no-store'
+  response.headers['Referrer-Policy'] = 'no-referrer'
+  try:
+    await auth_service.reset_password(payload.token, payload.password)
+  except AuthServiceError as error:
+    raise _http_exception_for_auth_error(error) from error
+  return AuthMessages.PASSWORD_RESET_SUCCESS
+
+
+@router.post('/update-password', response_model=TokenResponse)
+async def update_password(
+  payload: UpdatePasswordRequest,
+  current_user: CurrentUser,
+  auth_service: AuthServiceDep,
+) -> TokenResponse:
+  try:
+    return await auth_service.update_password(
+      current_user, payload.current_password, payload.new_password
+    )
+  except AuthServiceError as error:
+    raise _http_exception_for_auth_error(error) from error
 
 
 @router.post('/login', response_model=TokenResponse)
