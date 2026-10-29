@@ -41,6 +41,11 @@ class Settings(BaseSettings):
   email_verification_resend_cooldown_seconds: int = Field(ge=0)
   email_verification_url: AnyHttpUrl
 
+  # Password reset
+  password_reset_token_expire_minutes: int = Field(ge=1)
+  password_reset_resend_cooldown_seconds: int = Field(ge=0)
+  password_reset_url: AnyHttpUrl
+
   # SMTP
   smtp_host: str = Field(min_length=1)
   smtp_port: int = Field(ge=1, le=65535)

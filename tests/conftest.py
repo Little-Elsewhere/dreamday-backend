@@ -21,6 +21,9 @@ _TEST_ENV = {
   'EMAIL_VERIFICATION_TOKEN_EXPIRE_MINUTES': '60',
   'EMAIL_VERIFICATION_RESEND_COOLDOWN_SECONDS': '60',
   'EMAIL_VERIFICATION_URL': 'http://localhost:4000/verify-email',
+  'PASSWORD_RESET_TOKEN_EXPIRE_MINUTES': '60',
+  'PASSWORD_RESET_RESEND_COOLDOWN_SECONDS': '60',
+  'PASSWORD_RESET_URL': 'http://localhost:4000/reset-password',  # pragma: allowlist secret
   'SMTP_HOST': 'localhost',
   'SMTP_PORT': '1025',
   'SMTP_USERNAME': '',

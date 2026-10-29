@@ -4,9 +4,7 @@ from app.shared.responses import MessageResponse
 class AuthMessages:
   REGISTRATION_ACCEPTED = MessageResponse(
     code=1001,
-    message=(
-      'If this email address can be registered, a verification link will be sent.'
-    ),
+    message='Check your email for a verification link to finish registration.',
   )
   VERIFICATION_RESEND_ACCEPTED = MessageResponse(
     code=1002,
@@ -26,7 +24,7 @@ class AuthMessages:
   )
   EMAIL_NOT_VERIFIED = MessageResponse(
     code=1006,
-    message='Verify your email before logging in.',
+    message='Check your email for a verification link before logging in.',
   )
   ACCOUNT_DISABLED = MessageResponse(
     code=1007,
@@ -47,4 +45,26 @@ class AuthMessages:
   LOGGED_OUT = MessageResponse(
     code=1011,
     message='Logged out.',
+  )
+  EMAIL_ALREADY_REGISTERED = MessageResponse(
+    code=1012,
+    message='An account with this email already exists.',
+  )
+  PASSWORD_RESET_EMAIL_ACCEPTED = MessageResponse(
+    code=1013,
+    message=(
+      'If an account exists for this email, a password reset link will be sent.'
+    ),
+  )
+  INVALID_OR_EXPIRED_PASSWORD_RESET_LINK = MessageResponse(
+    code=1014,
+    message='Invalid or expired password reset link.',
+  )
+  PASSWORD_RESET_SUCCESS = MessageResponse(
+    code=1015,
+    message='Password updated. You can now log in with your new password.',
+  )
+  INVALID_CURRENT_PASSWORD = MessageResponse(
+    code=1016,
+    message='Current password is incorrect.',
   )

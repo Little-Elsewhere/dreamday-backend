@@ -1,5 +1,6 @@
 import logging
 import secrets
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from enum import Enum, auto
@@ -9,10 +10,15 @@ import anyio
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.email import send_verification_email
-from app.auth.models import EmailVerificationToken, RefreshToken, User
-from app.auth.repositories.email_verification_tokens import (
-  EmailVerificationTokenRepository,
+from app.auth.models import (
+  EmailVerificationToken,
+  PasswordResetToken,
+  RefreshToken,
+  User,
+)
+from app.auth.repositories.purpose_tokens import (
+  PurposeTokenRepository,
+  PurposeTokenT,
 )
 from app.auth.repositories.refresh_tokens import RefreshTokenRepository
 from app.auth.repositories.users import UserRepository
@@ -21,6 +27,7 @@ from app.core.config import settings
 from app.core.database import SessionFactory
 from app.core.security import (
   create_access_token,
+  create_purpose_token,
   hash_password,
   hash_secret,
   verify_password,
@@ -28,13 +35,33 @@ from app.core.security import (
 
 logger = logging.getLogger(__name__)
 
+SendTokenEmail = Callable[[str, str], Awaitable[None]]
+
 
 class AuthServiceErrorCode(Enum):
+  EMAIL_ALREADY_REGISTERED = auto()
   INVALID_VERIFICATION_LINK = auto()
   INVALID_CREDENTIALS = auto()
   EMAIL_NOT_VERIFIED = auto()
   ACCOUNT_DISABLED = auto()
   INVALID_REFRESH_TOKEN = auto()
+  INVALID_PASSWORD_RESET_LINK = auto()
+  INVALID_CURRENT_PASSWORD = auto()
+
+
+@dataclass(frozen=True)
+class TokenEmail:
+  email: str
+  raw_token: str
+  token_hash: str
+
+
+@dataclass(frozen=True)
+class PurposeTokenSpec[PurposeTokenT]:
+  typ: str
+  model: type[PurposeTokenT]
+  expire_minutes: int
+  cooldown_seconds: int
 
 
 class AuthServiceError(Exception):
@@ -43,93 +70,111 @@ class AuthServiceError(Exception):
     super().__init__(code.name)
 
 
-@dataclass(frozen=True)
-class VerificationEmail:
-  email: str
-  raw_token: str
-  token_hash: str
-
-
-def normalize_email(email: str) -> str:
-  return email.strip().lower()
-
-
 class AuthService:
   def __init__(self, session: AsyncSession) -> None:
     self.session = session
     self.users = UserRepository(session)
-    self.verification_tokens = EmailVerificationTokenRepository(session)
+    self.verification_tokens = PurposeTokenRepository(
+      session, EmailVerificationToken
+    )
+    self.password_reset_tokens = PurposeTokenRepository(
+      session, PasswordResetToken
+    )
     self.refresh_tokens = RefreshTokenRepository(session)
 
-  async def register(
-    self, email: str, password: str
-  ) -> VerificationEmail | None:
-    email = normalize_email(email)
+  async def register(self, email: str, password: str) -> TokenEmail:
+    if await self.users.get_by_email(email) is not None:
+      raise AuthServiceError(AuthServiceErrorCode.EMAIL_ALREADY_REGISTERED)
+
     hashed_password = await anyio.to_thread.run_sync(hash_password, password)
-    user = await self.users.get_by_email(email, for_update=True)
-
-    if user is None:
-      user = User(email=email, password_hash=hashed_password)
-      self.users.add(user)
-      try:
-        await self.session.flush()
-      except IntegrityError:
-        await self.session.rollback()
-        return None
-    elif (
-      not user.is_active
-      or user.is_email_verified
-      or not await self._verification_token_can_be_sent(user.id)
-    ):
-      return None
-
-    verification_email = await self._issue_verification_token(user)
+    user = User(email=email, password_hash=hashed_password)
+    self.users.add(user)
     try:
-      await self.session.commit()
-    except IntegrityError:
+      await self.session.flush()
+    except IntegrityError as error:
       await self.session.rollback()
-      return None
+      raise AuthServiceError(
+        AuthServiceErrorCode.EMAIL_ALREADY_REGISTERED
+      ) from error
+
+    verification_email = await self._issue_purpose_token(
+      user,
+      repository=self.verification_tokens,
+      spec=self._email_verification_spec(),
+    )
+    await self.session.commit()
     return verification_email
 
-  async def resend_verification(self, email: str) -> VerificationEmail | None:
-    email = normalize_email(email)
+  async def resend_verification(self, email: str) -> TokenEmail | None:
     user = await self.users.get_by_email(email, for_update=True)
-    if (
-      user is None
-      or not user.is_active
-      or user.is_email_verified
-      or not await self._verification_token_can_be_sent(user.id)
-    ):
+    if user is None or not user.is_active or user.is_email_verified:
       return None
 
-    verification_email = await self._issue_verification_token(user)
+    verification_email = await self._prepare_purpose_token_email(
+      user,
+      repository=self.verification_tokens,
+      spec=self._email_verification_spec(),
+    )
     await self.session.commit()
     return verification_email
 
   async def verify_email(self, raw_token: str) -> None:
     now = datetime.now(UTC)
-    verification = await self.verification_tokens.get_by_token_hash(
-      hash_secret(raw_token), for_update=True
+    verification, user = await self._require_active_purpose_token(
+      raw_token,
+      repository=self.verification_tokens,
+      error_code=AuthServiceErrorCode.INVALID_VERIFICATION_LINK,
+      now=now,
     )
-    if (
-      verification is None
-      or verification.consumed_at is not None
-      or verification.expires_at <= now
-    ):
-      raise AuthServiceError(AuthServiceErrorCode.INVALID_VERIFICATION_LINK)
-
-    user = await self.users.get_by_id(verification.user_id)
-    if user is None or not user.is_active:
-      self.verification_tokens.consume(verification, now)
-      await self.session.commit()
-      raise AuthServiceError(AuthServiceErrorCode.INVALID_VERIFICATION_LINK)
-
     self.verification_tokens.consume(verification, now)
     user.is_email_verified = True
     await self.session.commit()
 
+  async def forgot_password(self, email: str) -> TokenEmail | None:
+    user = await self.users.get_by_email(email, for_update=True)
+    if user is None or not user.is_active:
+      return None
+
+    reset_email = await self._prepare_purpose_token_email(
+      user,
+      repository=self.password_reset_tokens,
+      spec=self._password_reset_spec(),
+    )
+    await self.session.commit()
+    return reset_email
+
+  async def reset_password(self, raw_token: str, password: str) -> None:
+    now = datetime.now(UTC)
+    reset, user = await self._require_active_purpose_token(
+      raw_token,
+      repository=self.password_reset_tokens,
+      error_code=AuthServiceErrorCode.INVALID_PASSWORD_RESET_LINK,
+      now=now,
+    )
+    hashed_password = await anyio.to_thread.run_sync(hash_password, password)
+    self.password_reset_tokens.consume(reset, now)
+    user.password_hash = hashed_password
+    user.is_email_verified = True
+    await self.refresh_tokens.revoke_all_for_user(user.id, now)
+    await self.session.commit()
+
+  async def update_password(
+    self, user: User, current_password: str, new_password: str
+  ) -> TokenResponse:
+    is_current_valid = await anyio.to_thread.run_sync(
+      verify_password, current_password, user.password_hash
+    )
+    if not is_current_valid:
+      raise AuthServiceError(AuthServiceErrorCode.INVALID_CURRENT_PASSWORD)
+
+    hashed_password = await anyio.to_thread.run_sync(
+      hash_password, new_password
+    )
+    user.password_hash = hashed_password
+    await self.refresh_tokens.revoke_all_for_user(user.id, datetime.now(UTC))
+    return await self._create_auth_tokens(user)
+
   async def login(self, email: str, password: str) -> TokenResponse:
-    email = normalize_email(email)
     user = await self.users.get_by_email(email)
     if user is None:
       await anyio.to_thread.run_sync(hash_password, password)
@@ -140,10 +185,10 @@ class AuthService:
     )
     if not is_password_valid:
       raise AuthServiceError(AuthServiceErrorCode.INVALID_CREDENTIALS)
-    if not user.is_email_verified:
-      raise AuthServiceError(AuthServiceErrorCode.EMAIL_NOT_VERIFIED)
     if not user.is_active:
       raise AuthServiceError(AuthServiceErrorCode.ACCOUNT_DISABLED)
+    if not user.is_email_verified:
+      raise AuthServiceError(AuthServiceErrorCode.EMAIL_NOT_VERIFIED)
     return await self._create_auth_tokens(user)
 
   async def refresh(self, raw_token: str) -> TokenResponse:
@@ -194,31 +239,117 @@ class AuthService:
       self.refresh_tokens.revoke(stored_token, datetime.now(UTC))
       await self.session.commit()
 
-  async def _verification_token_can_be_sent(self, user_id: UUID) -> bool:
-    now = datetime.now(UTC)
-    latest_created_at = await self.verification_tokens.latest_active_created_at(
-      user_id, now
+  def _email_verification_spec(
+    self,
+  ) -> PurposeTokenSpec[EmailVerificationToken]:
+    return PurposeTokenSpec(
+      typ='email_verify',
+      model=EmailVerificationToken,
+      expire_minutes=settings.email_verification_token_expire_minutes,
+      cooldown_seconds=settings.email_verification_resend_cooldown_seconds,
     )
-    if latest_created_at is None:
-      return True
-    return (
-      now - latest_created_at
-    ).total_seconds() >= settings.email_verification_resend_cooldown_seconds
 
-  async def _issue_verification_token(self, user: User) -> VerificationEmail:
+  def _password_reset_spec(self) -> PurposeTokenSpec[PasswordResetToken]:
+    return PurposeTokenSpec(
+      typ='password_reset',
+      model=PasswordResetToken,
+      expire_minutes=settings.password_reset_token_expire_minutes,
+      cooldown_seconds=settings.password_reset_resend_cooldown_seconds,
+    )
+
+  async def _require_active_purpose_token(
+    self,
+    raw_token: str,
+    *,
+    repository: PurposeTokenRepository[PurposeTokenT],
+    error_code: AuthServiceErrorCode,
+    now: datetime,
+  ) -> tuple[PurposeTokenT, User]:
+    stored = await repository.get_by_token_hash(
+      hash_secret(raw_token), for_update=True
+    )
+    if (
+      stored is None
+      or stored.consumed_at is not None
+      or stored.expires_at <= now
+    ):
+      raise AuthServiceError(error_code)
+
+    user = await self.users.get_by_id(stored.user_id)
+    if user is None or not user.is_active:
+      repository.consume(stored, now)
+      await self.session.commit()
+      raise AuthServiceError(error_code)
+    return stored, user
+
+  async def _prepare_purpose_token_email(
+    self,
+    user: User,
+    *,
+    repository: PurposeTokenRepository[PurposeTokenT],
+    spec: PurposeTokenSpec[PurposeTokenT],
+  ) -> TokenEmail:
     now = datetime.now(UTC)
-    raw_token = secrets.token_urlsafe(32)
+    active = await repository.get_latest_active(user.id, now, for_update=True)
+    if active is not None:
+      age_seconds = (now - active.created_at).total_seconds()
+      if age_seconds < spec.cooldown_seconds:
+        reused = self._token_email_from_record(user, active, typ=spec.typ)
+        if reused is not None:
+          return reused
+    return await self._issue_purpose_token(
+      user, repository=repository, spec=spec
+    )
+
+  def _token_email_from_record(
+    self,
+    user: User,
+    token: EmailVerificationToken | PasswordResetToken,
+    *,
+    typ: str,
+  ) -> TokenEmail | None:
+    raw_token = create_purpose_token(
+      typ=typ,
+      user_id=user.id,
+      email=user.email,
+      token_id=token.id,
+      issued_at=token.created_at,
+      expires_at=token.expires_at,
+    )
     token_hash = hash_secret(raw_token)
-    verification = EmailVerificationToken(
+    if token_hash != token.token_hash:
+      return None
+    return TokenEmail(user.email, raw_token, token_hash)
+
+  async def _issue_purpose_token(
+    self,
+    user: User,
+    *,
+    repository: PurposeTokenRepository[PurposeTokenT],
+    spec: PurposeTokenSpec[PurposeTokenT],
+  ) -> TokenEmail:
+    issued_at_ts = int(datetime.now(UTC).timestamp())
+    issued_at = datetime.fromtimestamp(issued_at_ts, UTC)
+    expires_at = issued_at + timedelta(minutes=spec.expire_minutes)
+    token_id = uuid4()
+    raw_token = create_purpose_token(
+      typ=spec.typ,
+      user_id=user.id,
+      email=user.email,
+      token_id=token_id,
+      issued_at=issued_at,
+      expires_at=expires_at,
+    )
+    token_hash = hash_secret(raw_token)
+    record = spec.model(
+      id=token_id,
       user_id=user.id,
       token_hash=token_hash,
-      expires_at=now
-      + timedelta(minutes=settings.email_verification_token_expire_minutes),
+      expires_at=expires_at,
+      created_at=issued_at,
     )
-    await self.verification_tokens.replace_pending_for_user(
-      user.id, verification, now
-    )
-    return VerificationEmail(user.email, raw_token, token_hash)
+    await repository.replace_pending_for_user(user.id, record, issued_at)
+    return TokenEmail(user.email, raw_token, token_hash)
 
   async def _create_auth_tokens(self, user: User) -> TokenResponse:
     now = datetime.now(UTC)
@@ -257,14 +388,20 @@ def create_token_response(user_id: UUID, refresh_token: str) -> TokenResponse:
   )
 
 
-async def deliver_verification_email_in_background(
-  email: str, raw_token: str, token_hash: str
+async def deliver_token_email_in_background(
+  email: str,
+  raw_token: str,
+  token_hash: str,
+  *,
+  send: SendTokenEmail,
+  model: type[EmailVerificationToken] | type[PasswordResetToken],
+  failure_log: str,
 ) -> None:
   async with SessionFactory() as session:
     try:
-      await send_verification_email(email, raw_token)
+      await send(email, raw_token)
     except Exception:
-      logger.exception('Could not send an email verification message')
-      repository = EmailVerificationTokenRepository(session)
+      logger.exception(failure_log)
+      repository = PurposeTokenRepository(session, model)
       await repository.consume_by_token_hash(token_hash, datetime.now(UTC))
       await session.commit()
