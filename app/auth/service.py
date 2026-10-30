@@ -25,6 +25,7 @@ from app.auth.repositories.users import UserRepository
 from app.auth.schemas import TokenResponse
 from app.core.config import settings
 from app.core.database import SessionFactory
+from app.core.datetime import utc_now
 from app.core.security import (
   create_access_token,
   create_purpose_token,
@@ -119,7 +120,7 @@ class AuthService:
     return verification_email
 
   async def verify_email(self, raw_token: str) -> None:
-    now = datetime.now(UTC)
+    now = utc_now()
     verification, user = await self._require_active_purpose_token(
       raw_token,
       repository=self.verification_tokens,
@@ -144,7 +145,7 @@ class AuthService:
     return reset_email
 
   async def reset_password(self, raw_token: str, password: str) -> None:
-    now = datetime.now(UTC)
+    now = utc_now()
     reset, user = await self._require_active_purpose_token(
       raw_token,
       repository=self.password_reset_tokens,
@@ -171,13 +172,12 @@ class AuthService:
       hash_password, new_password
     )
     user.password_hash = hashed_password
-    await self.refresh_tokens.revoke_all_for_user(user.id, datetime.now(UTC))
+    await self.refresh_tokens.revoke_all_for_user(user.id, utc_now())
     return await self._create_auth_tokens(user)
 
   async def login(self, email: str, password: str) -> TokenResponse:
     user = await self.users.get_by_email(email)
     if user is None:
-      await anyio.to_thread.run_sync(hash_password, password)
       raise AuthServiceError(AuthServiceErrorCode.INVALID_CREDENTIALS)
 
     is_password_valid = await anyio.to_thread.run_sync(
@@ -192,7 +192,7 @@ class AuthService:
     return await self._create_auth_tokens(user)
 
   async def refresh(self, raw_token: str) -> TokenResponse:
-    now = datetime.now(UTC)
+    now = utc_now()
     stored_token = await self.refresh_tokens.get_by_token_hash(
       hash_secret(raw_token), for_update=True
     )
@@ -236,7 +236,7 @@ class AuthService:
       hash_secret(raw_token), for_update=True
     )
     if stored_token is not None and stored_token.revoked_at is None:
-      self.refresh_tokens.revoke(stored_token, datetime.now(UTC))
+      self.refresh_tokens.revoke(stored_token, utc_now())
       await self.session.commit()
 
   def _email_verification_spec(
@@ -289,7 +289,7 @@ class AuthService:
     repository: PurposeTokenRepository[PurposeTokenT],
     spec: PurposeTokenSpec[PurposeTokenT],
   ) -> TokenEmail:
-    now = datetime.now(UTC)
+    now = utc_now()
     active = await repository.get_latest_active(user.id, now, for_update=True)
     if active is not None:
       age_seconds = (now - active.created_at).total_seconds()
@@ -328,7 +328,7 @@ class AuthService:
     repository: PurposeTokenRepository[PurposeTokenT],
     spec: PurposeTokenSpec[PurposeTokenT],
   ) -> TokenEmail:
-    issued_at_ts = int(datetime.now(UTC).timestamp())
+    issued_at_ts = int(utc_now().timestamp())
     issued_at = datetime.fromtimestamp(issued_at_ts, UTC)
     expires_at = issued_at + timedelta(minutes=spec.expire_minutes)
     token_id = uuid4()
@@ -352,7 +352,7 @@ class AuthService:
     return TokenEmail(user.email, raw_token, token_hash)
 
   async def _create_auth_tokens(self, user: User) -> TokenResponse:
-    now = datetime.now(UTC)
+    now = utc_now()
     raw_refresh_token = secrets.token_urlsafe(48)
     family_id = uuid4()
     refresh_expires_at = now + timedelta(
@@ -403,5 +403,5 @@ async def deliver_token_email_in_background(
     except Exception:
       logger.exception(failure_log)
       repository = PurposeTokenRepository(session, model)
-      await repository.consume_by_token_hash(token_hash, datetime.now(UTC))
+      await repository.consume_by_token_hash(token_hash, utc_now())
       await session.commit()

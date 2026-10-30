@@ -15,11 +15,9 @@ class Settings(BaseSettings):
     str_strip_whitespace=True,
   )
 
-  # Application
   app_name: str = Field(min_length=1)
   app_debug: bool
 
-  # Database
   db_host: str = Field(min_length=1)
   db_port: int = Field(ge=1, le=65535)
   db_user: str = Field(min_length=1, validation_alias='POSTGRES_USER')
@@ -29,24 +27,20 @@ class Settings(BaseSettings):
   )
   db_name: str = Field(min_length=1, validation_alias='POSTGRES_DB')
 
-  # Authentication and tokens
   jwt_secret_key: SecretStr = Field(min_length=32)
   jwt_issuer: str = Field(min_length=1)
   jwt_audience: str = Field(min_length=1)
   access_token_expire_minutes: int = Field(ge=1)
   refresh_token_expire_days: int = Field(ge=1)
 
-  # Email verification
   email_verification_token_expire_minutes: int = Field(ge=1)
   email_verification_resend_cooldown_seconds: int = Field(ge=0)
   email_verification_url: AnyHttpUrl
 
-  # Password reset
   password_reset_token_expire_minutes: int = Field(ge=1)
   password_reset_resend_cooldown_seconds: int = Field(ge=0)
   password_reset_url: AnyHttpUrl
 
-  # SMTP
   smtp_host: str = Field(min_length=1)
   smtp_port: int = Field(ge=1, le=65535)
   smtp_username: str | None

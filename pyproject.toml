@@ -17,6 +17,7 @@ dependencies = [
 
 [dependency-groups]
 dev = [
+    "aiosqlite>=0.22.1",
     "commitizen>=4.10.0",
     "detect-secrets>=1.5.0",
     "httpx>=0.28.0",
@@ -190,7 +191,11 @@ forbidden_modules = [
   "app.auth.repositories",
   "app.auth.models",
   "app.auth.messages",
-  "app.core",
+  "app.core.base",
+  "app.core.config",
+  "app.core.database",
+  "app.core.security",
+  "app.core.types",
   "app.health",
 ]
 
@@ -254,6 +259,7 @@ select = [
     "I",   # Import sorting
     "B",   # Bugbear
     "UP",  # Modern Python syntax
+    "PLC0415",  # Imports must be at module top level
 ]
 
 [tool.ruff.format]

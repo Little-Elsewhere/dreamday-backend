@@ -3,7 +3,6 @@ from uuid import UUID, uuid4
 
 from sqlalchemy import (
   Boolean,
-  DateTime,
   ForeignKey,
   Index,
   String,
@@ -13,6 +12,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.base import Base
+from app.core.types import UtcDateTime
 
 
 class User(Base):
@@ -30,7 +30,7 @@ class User(Base):
     Boolean, default=True, server_default='true', nullable=False
   )
   created_at: Mapped[datetime] = mapped_column(
-    DateTime(timezone=True), server_default=func.now(), nullable=False
+    UtcDateTime, server_default=func.now(), nullable=False
   )
 
 
@@ -55,14 +55,12 @@ class EmailVerificationToken(Base):
   token_hash: Mapped[str] = mapped_column(
     String(64), unique=True, nullable=False
   )
-  expires_at: Mapped[datetime] = mapped_column(
-    DateTime(timezone=True), nullable=False
-  )
+  expires_at: Mapped[datetime] = mapped_column(UtcDateTime, nullable=False)
   consumed_at: Mapped[datetime | None] = mapped_column(
-    DateTime(timezone=True), nullable=True
+    UtcDateTime, nullable=True
   )
   created_at: Mapped[datetime] = mapped_column(
-    DateTime(timezone=True), server_default=func.now(), nullable=False
+    UtcDateTime, server_default=func.now(), nullable=False
   )
 
 
@@ -87,14 +85,12 @@ class PasswordResetToken(Base):
   token_hash: Mapped[str] = mapped_column(
     String(64), unique=True, nullable=False
   )
-  expires_at: Mapped[datetime] = mapped_column(
-    DateTime(timezone=True), nullable=False
-  )
+  expires_at: Mapped[datetime] = mapped_column(UtcDateTime, nullable=False)
   consumed_at: Mapped[datetime | None] = mapped_column(
-    DateTime(timezone=True), nullable=True
+    UtcDateTime, nullable=True
   )
   created_at: Mapped[datetime] = mapped_column(
-    DateTime(timezone=True), server_default=func.now(), nullable=False
+    UtcDateTime, server_default=func.now(), nullable=False
   )
 
 
@@ -114,11 +110,9 @@ class RefreshToken(Base):
   token_hash: Mapped[str] = mapped_column(
     String(64), unique=True, nullable=False
   )
-  expires_at: Mapped[datetime] = mapped_column(
-    DateTime(timezone=True), nullable=False
-  )
+  expires_at: Mapped[datetime] = mapped_column(UtcDateTime, nullable=False)
   revoked_at: Mapped[datetime | None] = mapped_column(
-    DateTime(timezone=True), nullable=True
+    UtcDateTime, nullable=True
   )
   replaced_by_id: Mapped[UUID | None] = mapped_column(
     Uuid(as_uuid=True),
@@ -126,5 +120,5 @@ class RefreshToken(Base):
     nullable=True,
   )
   created_at: Mapped[datetime] = mapped_column(
-    DateTime(timezone=True), server_default=func.now(), nullable=False
+    UtcDateTime, server_default=func.now(), nullable=False
   )
