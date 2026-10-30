@@ -1,8 +1,9 @@
-from datetime import datetime
 from typing import Annotated, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, BeforeValidator, EmailStr, Field
+
+from app.core.datetime import UtcInstant
 
 
 def normalize_email(email: str) -> str:
@@ -60,4 +61,4 @@ class UserResponse(BaseModel):
   id: UUID
   email: EmailStr
   is_email_verified: bool
-  created_at: datetime
+  created_at: UtcInstant

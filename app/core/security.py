@@ -1,4 +1,4 @@
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 from hashlib import sha256
 from uuid import UUID, uuid4
 
@@ -6,6 +6,7 @@ import jwt
 from pwdlib import PasswordHash
 
 from app.core.config import settings
+from app.core.datetime import as_utc, utc_now
 
 password_hash = PasswordHash.recommended()
 
@@ -36,8 +37,8 @@ def create_purpose_token(
     'email': email,
     'typ': typ,
     'jti': str(token_id),
-    'iat': int(issued_at.timestamp()),
-    'exp': int(expires_at.timestamp()),
+    'iat': int(as_utc(issued_at).timestamp()),
+    'exp': int(as_utc(expires_at).timestamp()),
   }
   return jwt.encode(
     payload,
@@ -47,7 +48,7 @@ def create_purpose_token(
 
 
 def create_access_token(user_id: UUID) -> str:
-  now = datetime.now(UTC)
+  now = utc_now()
   expires_at = now + timedelta(minutes=settings.access_token_expire_minutes)
   payload = {
     'sub': str(user_id),
