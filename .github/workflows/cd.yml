@@ -11,6 +11,7 @@ concurrency:
 jobs:
   build:
     name: Build
+    environment: prod
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -27,3 +28,4 @@ jobs:
           tags: dreamday-backend:ci
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
