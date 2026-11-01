@@ -2,7 +2,7 @@
 
 FROM ghcr.io/astral-sh/uv:0.12.23 AS uv
 
-FROM python:3.15-slim-trixie AS builder
+FROM python:3.14-slim-trixie AS builder
 
 COPY --from=uv /uv /bin/uv
 
@@ -17,7 +17,7 @@ COPY pyproject.toml uv.lock ./
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --locked --no-install-project --no-dev
 
-FROM python:3.15-slim-trixie
+FROM python:3.14-slim-trixie
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
