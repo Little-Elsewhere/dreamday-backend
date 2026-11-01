@@ -1,7 +1,7 @@
 [project]
 name = "dreamday-backend"
 version = "0.1.0"
-requires-python = ">=3.15"
+requires-python = ">=3.14"
 dependencies = [
     "aiosmtplib>=3.0.0",
     "alembic>=1.13.0",
