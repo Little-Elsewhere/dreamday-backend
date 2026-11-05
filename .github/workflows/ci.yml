@@ -129,6 +129,28 @@ jobs:
       - name: Scan for secrets
         run: uv run detect-secrets-hook --baseline .secrets.baseline $(git ls-files)
 
+  jscpd:
+    name: jscpd
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.14'
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --locked --group dev
+
+      - name: Check duplicated code
+        run: uv run jscpd .
+
   unit:
     name: Unit Tests
     environment: dev
@@ -182,7 +204,7 @@ jobs:
 
   auto-merge:
     name: Auto Merge
-    needs: [commitizen, format, lint, architecture, secrets, unit]
+    needs: [commitizen, format, lint, architecture, secrets, jscpd, unit]
     if: >
       github.event.pull_request.draft == false &&
       github.event.pull_request.base.ref == 'develop'

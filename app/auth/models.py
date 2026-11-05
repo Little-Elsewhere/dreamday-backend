@@ -34,7 +34,30 @@ class User(Base):
   )
 
 
-class EmailVerificationToken(Base):
+class ConsumedToken(Base):
+  __abstract__ = True
+
+  id: Mapped[UUID] = mapped_column(
+    Uuid(as_uuid=True), primary_key=True, default=uuid4
+  )
+  user_id: Mapped[UUID] = mapped_column(
+    Uuid(as_uuid=True),
+    ForeignKey('users.id', ondelete='CASCADE'),
+    nullable=False,
+  )
+  token_hash: Mapped[str] = mapped_column(
+    String(64), unique=True, nullable=False
+  )
+  expires_at: Mapped[datetime] = mapped_column(UtcDateTime, nullable=False)
+  consumed_at: Mapped[datetime | None] = mapped_column(
+    UtcDateTime, nullable=True
+  )
+  created_at: Mapped[datetime] = mapped_column(
+    UtcDateTime, server_default=func.now(), nullable=False
+  )
+
+
+class EmailVerificationToken(ConsumedToken):
   __tablename__ = 'email_verification_tokens'
   __table_args__ = (
     Index(
@@ -44,27 +67,8 @@ class EmailVerificationToken(Base):
     ),
   )
 
-  id: Mapped[UUID] = mapped_column(
-    Uuid(as_uuid=True), primary_key=True, default=uuid4
-  )
-  user_id: Mapped[UUID] = mapped_column(
-    Uuid(as_uuid=True),
-    ForeignKey('users.id', ondelete='CASCADE'),
-    nullable=False,
-  )
-  token_hash: Mapped[str] = mapped_column(
-    String(64), unique=True, nullable=False
-  )
-  expires_at: Mapped[datetime] = mapped_column(UtcDateTime, nullable=False)
-  consumed_at: Mapped[datetime | None] = mapped_column(
-    UtcDateTime, nullable=True
-  )
-  created_at: Mapped[datetime] = mapped_column(
-    UtcDateTime, server_default=func.now(), nullable=False
-  )
 
-
-class PasswordResetToken(Base):
+class PasswordResetToken(ConsumedToken):
   __tablename__ = 'password_reset_tokens'
   __table_args__ = (
     Index(
@@ -72,25 +76,6 @@ class PasswordResetToken(Base):
       'user_id',
       'created_at',
     ),
-  )
-
-  id: Mapped[UUID] = mapped_column(
-    Uuid(as_uuid=True), primary_key=True, default=uuid4
-  )
-  user_id: Mapped[UUID] = mapped_column(
-    Uuid(as_uuid=True),
-    ForeignKey('users.id', ondelete='CASCADE'),
-    nullable=False,
-  )
-  token_hash: Mapped[str] = mapped_column(
-    String(64), unique=True, nullable=False
-  )
-  expires_at: Mapped[datetime] = mapped_column(UtcDateTime, nullable=False)
-  consumed_at: Mapped[datetime | None] = mapped_column(
-    UtcDateTime, nullable=True
-  )
-  created_at: Mapped[datetime] = mapped_column(
-    UtcDateTime, server_default=func.now(), nullable=False
   )
 
 

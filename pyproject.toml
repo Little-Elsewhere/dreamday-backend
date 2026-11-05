@@ -22,6 +22,7 @@ dev = [
     "detect-secrets>=1.5.0",
     "httpx>=0.28.0",
     "import-linter>=2.0",
+    "jscpd>=5.4.2",
     "pytest>=8.0.0",
     "pytest-asyncio>=0.24.0",
     "ruff>=0.17.0",
