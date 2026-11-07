@@ -51,6 +51,13 @@ class Settings(BaseSettings):
   smtp_from_email: EmailStr
   smtp_from_name: str = Field(min_length=1)
 
+  s3_endpoint_url: AnyHttpUrl
+  s3_access_key: str = Field(min_length=1)
+  s3_secret_key: SecretStr = Field(min_length=1)
+  s3_bucket: str = Field(min_length=1)
+  s3_public_base_url: AnyHttpUrl
+  s3_region: str = Field(min_length=1)
+
   @property
   def database_url(self) -> URL:
     return URL.create(
