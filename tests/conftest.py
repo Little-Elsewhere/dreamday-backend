@@ -43,18 +43,27 @@ _TEST_ENV = {
   'SMTP_TIMEOUT_SECONDS': '5',
   'SMTP_FROM_EMAIL': 'noreply@example.com',
   'SMTP_FROM_NAME': 'Dreamday Test',
+  'S3_ENDPOINT_URL': 'http://127.0.0.1:9000',
+  'S3_ACCESS_KEY': 'test-access-key',
+  'S3_SECRET_KEY': 'test-secret-key',  # pragma: allowlist secret
+  'S3_BUCKET': 'dreamday-covers-test',
+  'S3_PUBLIC_BASE_URL': 'http://test.local/dreamday-covers',
+  'S3_REGION': 'us-east-1',
 }
 
 for key, value in _TEST_ENV.items():
   os.environ.setdefault(key, value)
 
 import app.auth.models  # noqa: E402, F401
+import app.trips.models  # noqa: E402, F401
 from app.auth.models import RefreshToken, User  # noqa: E402
 from app.auth.service import AuthService, create_refresh_token_record  # noqa: E402
 from app.core.base import Base  # noqa: E402
 from app.core.database import get_session  # noqa: E402
 from app.core.security import hash_password  # noqa: E402
+from app.core.storage import InMemoryObjectStorage  # noqa: E402
 from app.main import app  # noqa: E402
+from app.trips.dependencies import get_object_storage  # noqa: E402
 from tests.helpers import SessionFactoryAdapter  # noqa: E402
 
 
@@ -112,11 +121,16 @@ async def client(
     SessionFactoryAdapter(session),
   )
 
+  storage = InMemoryObjectStorage()
+
   app.dependency_overrides[get_session] = override_get_session
+  app.dependency_overrides[get_object_storage] = lambda: storage
   transport = ASGITransport(app=app)
   async with AsyncClient(transport=transport, base_url='http://test') as ac:
+    ac.storage = storage  # type: ignore[attr-defined]
     yield ac
   app.dependency_overrides.clear()
+  get_object_storage.cache_clear()
 
 
 @pytest.fixture
