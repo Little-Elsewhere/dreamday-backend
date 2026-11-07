@@ -3,11 +3,13 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import date, datetime
 from enum import StrEnum
-from uuid import UUID
+from uuid import UUID, uuid4
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
+from botocore.exceptions import ClientError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.auth.access import find_verified_user_by_email, map_user_emails
 from app.core.datetime import utc_now
 from app.core.storage import (
   COVER_CONTENT_TYPES,
@@ -15,7 +17,12 @@ from app.core.storage import (
   ObjectStorage,
   cover_object_key,
 )
-from app.trips.models import DEFAULT_TRIP_TIMEZONE, Trip, TripActivity
+from app.trips.models import (
+  DEFAULT_TRIP_TIMEZONE,
+  Trip,
+  TripActivity,
+  TripMember,
+)
 from app.trips.repositories.trips import TripActivityRepository, TripRepository
 from app.trips.schemas import (
   TripActivityCreate,
@@ -25,6 +32,9 @@ from app.trips.schemas import (
   TripCreateRequest,
   TripDetailResponse,
   TripListResponse,
+  TripMemberCreateRequest,
+  TripMemberListResponse,
+  TripMemberResponse,
   TripUpdateRequest,
 )
 
@@ -43,6 +53,12 @@ class TripServiceErrorCode(StrEnum):
   INVALID_COVER = 'invalid_cover'
   ACTIVITY_DELETED = 'activity_deleted'
   ACTIVITY_NOT_DELETED = 'activity_not_deleted'
+  FORBIDDEN = 'forbidden'
+  COVER_NOT_FOUND = 'cover_not_found'
+  MEMBER_NOT_FOUND = 'member_not_found'
+  USER_NOT_FOUND = 'user_not_found'
+  ALREADY_A_MEMBER = 'already_a_member'
+  CANNOT_REMOVE_OWNER = 'cannot_remove_owner'
 
 
 @dataclass
@@ -69,6 +85,20 @@ def _trip_status(end: date | None, *, timezone_name: str) -> str | None:
     return 'upcoming'
   today = _today_in_timezone(timezone_name)
   return 'upcoming' if end >= today else 'past'
+
+
+def _cover_proxy_url(trip: Trip) -> str | None:
+  if not trip.cover_path:
+    return None
+  return f'/api/v1/trips/{trip.id}/cover'
+
+
+def _is_publicly_viewable(trip: Trip) -> bool:
+  return (
+    trip.deleted_at is None
+    and trip.lifecycle == 'published'
+    and trip.visibility == 'public'
+  )
 
 
 def _active_activities(trip: Trip) -> list[TripActivity]:
@@ -105,7 +135,8 @@ def _card_response(
     pace=trip.pace,  # type: ignore[arg-type]
     timezone=trip.timezone,
     lifecycle=trip.lifecycle,  # type: ignore[arg-type]
-    cover_url=trip.cover_url,
+    visibility=trip.visibility,  # type: ignore[arg-type]
+    cover_url=_cover_proxy_url(trip),
     status=_trip_status(trip.end_date, timezone_name=trip.timezone),
     duration_days=_duration_days(trip.start_date, trip.end_date),
     created_at=trip.created_at,
@@ -153,6 +184,23 @@ class TripService:
     self.trips = TripRepository(session)
     self.activities = TripActivityRepository(session)
 
+  def can_view_trip(self, user_id: UUID | None, trip: Trip) -> bool:
+    if trip.deleted_at is not None:
+      return False
+    if _is_publicly_viewable(trip):
+      return True
+    if user_id is None:
+      return False
+    return any(member.user_id == user_id for member in trip.members)
+
+  def can_edit_trip(self, user_id: UUID, trip: Trip) -> bool:
+    if trip.deleted_at is not None:
+      return False
+    return any(
+      member.user_id == user_id and member.role == 'owner'
+      for member in trip.members
+    )
+
   async def create_draft(
     self, user_id: UUID, payload: TripCreateRequest
   ) -> TripDetailResponse:
@@ -171,15 +219,27 @@ class TripService:
       end_date=payload.end_date,
       pace=payload.pace,
       timezone=payload.timezone.strip() or DEFAULT_TRIP_TIMEZONE,
+      visibility=payload.visibility,
       note=payload.note,
       lifecycle='draft',
       created_at=now,
       updated_at=now,
     )
     self.trips.add(trip)
+    await self.session.flush()
+    self.trips.add_member(
+      TripMember(
+        id=uuid4(),
+        trip_id=trip.id,
+        user_id=user_id,
+        role='owner',
+        created_at=now,
+        updated_at=now,
+      )
+    )
     await self.session.commit()
     loaded = await self.trips.get_by_id(
-      trip.id, user_id=user_id, with_activities=True
+      trip.id, with_activities=True, with_members=True
     )
     assert loaded is not None
     return _detail_response(loaded)
@@ -191,15 +251,27 @@ class TripService:
     return _detail_response(trip)
 
   async def get_trip(
-    self, user_id: UUID, trip_id: UUID, *, include_deleted: bool = False
+    self,
+    user_id: UUID | None,
+    trip_id: UUID,
+    *,
+    include_deleted: bool = False,
   ) -> TripDetailResponse:
-    trip = await self.trips.get_by_id(
+    trip = await self._load_trip(
       trip_id,
-      user_id=user_id,
       include_deleted=include_deleted,
       with_activities=True,
+      with_members=True,
     )
-    if trip is None:
+    if include_deleted:
+      if user_id is None or not self.can_edit_trip(user_id, trip):
+        # Soft-deleted trips are owner-only.
+        member = (
+          await self.trips.get_member(trip.id, user_id) if user_id else None
+        )
+        if member is None or member.role != 'owner':
+          raise TripServiceError(TripServiceErrorCode.TRIP_NOT_FOUND)
+    elif not self.can_view_trip(user_id, trip):
       raise TripServiceError(TripServiceErrorCode.TRIP_NOT_FOUND)
     return _detail_response(trip)
 
@@ -213,10 +285,8 @@ class TripService:
     limit: int = 6,
     offset: int = 0,
   ) -> TripListResponse:
-    # Filter upcoming/past using app default TZ for the query window; each
-    # card still reports status using its own timezone.
     today = _today_in_timezone(DEFAULT_TRIP_TIMEZONE)
-    items, total = await self.trips.list_for_user(
+    items, total = await self.trips.list_for_member(
       user_id,
       deleted=deleted,
       status=status,
@@ -235,7 +305,7 @@ class TripService:
   async def update_trip(
     self, user_id: UUID, trip_id: UUID, payload: TripUpdateRequest
   ) -> TripDetailResponse:
-    trip = await self._require_active_trip(user_id, trip_id)
+    trip = await self._require_editable_trip(user_id, trip_id)
     data = payload.model_dump(exclude_unset=True)
     start = data.get('start_date', trip.start_date)
     end = data.get('end_date', trip.end_date)
@@ -254,13 +324,13 @@ class TripService:
     trip.updated_at = utc_now()
     await self.session.commit()
     loaded = await self.trips.get_by_id(
-      trip_id, user_id=user_id, with_activities=True
+      trip_id, with_activities=True, with_members=True
     )
     assert loaded is not None
     return _detail_response(loaded)
 
   async def publish(self, user_id: UUID, trip_id: UUID) -> TripDetailResponse:
-    trip = await self._require_active_trip(
+    trip = await self._require_editable_trip(
       user_id, trip_id, with_activities=True
     )
     if (
@@ -283,13 +353,13 @@ class TripService:
     trip.updated_at = now
     await self.session.commit()
     loaded = await self.trips.get_by_id(
-      trip_id, user_id=user_id, with_activities=True
+      trip_id, with_activities=True, with_members=True
     )
     assert loaded is not None
     return _detail_response(loaded)
 
   async def soft_delete(self, user_id: UUID, trip_id: UUID) -> None:
-    trip = await self._require_active_trip(
+    trip = await self._require_editable_trip(
       user_id, trip_id, with_activities=True
     )
     now = utc_now()
@@ -301,11 +371,14 @@ class TripService:
   async def restore(self, user_id: UUID, trip_id: UUID) -> TripDetailResponse:
     trip = await self.trips.get_by_id(
       trip_id,
-      user_id=user_id,
       include_deleted=True,
       with_activities=True,
+      with_members=True,
     )
     if trip is None:
+      raise TripServiceError(TripServiceErrorCode.TRIP_NOT_FOUND)
+    member = await self.trips.get_member(trip.id, user_id)
+    if member is None or member.role != 'owner':
       raise TripServiceError(TripServiceErrorCode.TRIP_NOT_FOUND)
     if trip.deleted_at is None:
       raise TripServiceError(TripServiceErrorCode.TRIP_NOT_DELETED)
@@ -320,7 +393,7 @@ class TripService:
     await self.trips.restore_cascade_activities(trip)
     await self.session.commit()
     loaded = await self.trips.get_by_id(
-      trip_id, user_id=user_id, with_activities=True
+      trip_id, with_activities=True, with_members=True
     )
     assert loaded is not None
     return _detail_response(loaded)
@@ -333,7 +406,7 @@ class TripService:
     body: bytes,
     content_type: str,
   ) -> TripDetailResponse:
-    trip = await self._require_active_trip(user_id, trip_id)
+    trip = await self._require_editable_trip(user_id, trip_id)
     if (
       content_type not in COVER_CONTENT_TYPES
       or len(body) == 0
@@ -345,11 +418,9 @@ class TripService:
       user_id=user_id, trip_id=trip_id, content_type=content_type
     )
     previous_key = trip.cover_path
-    url = await self.storage.put_bytes(
-      key=key, body=body, content_type=content_type
-    )
+    await self.storage.put_bytes(key=key, body=body, content_type=content_type)
     trip.cover_path = key
-    trip.cover_url = url
+    trip.cover_url = None
     trip.updated_at = utc_now()
     await self.session.commit()
 
@@ -357,7 +428,7 @@ class TripService:
       await self.storage.delete_object(previous_key)
 
     loaded = await self.trips.get_by_id(
-      trip_id, user_id=user_id, with_activities=True
+      trip_id, with_activities=True, with_members=True
     )
     assert loaded is not None
     return _detail_response(loaded)
@@ -365,7 +436,7 @@ class TripService:
   async def remove_cover(
     self, user_id: UUID, trip_id: UUID
   ) -> TripDetailResponse:
-    trip = await self._require_active_trip(user_id, trip_id)
+    trip = await self._require_editable_trip(user_id, trip_id)
     previous_key = trip.cover_path
     trip.cover_path = None
     trip.cover_url = None
@@ -374,10 +445,105 @@ class TripService:
     if previous_key:
       await self.storage.delete_object(previous_key)
     loaded = await self.trips.get_by_id(
-      trip_id, user_id=user_id, with_activities=True
+      trip_id, with_activities=True, with_members=True
     )
     assert loaded is not None
     return _detail_response(loaded)
+
+  async def get_cover_bytes(
+    self, user_id: UUID | None, trip_id: UUID
+  ) -> tuple[bytes, str]:
+    trip = await self._load_trip(trip_id, with_members=True)
+    if not self.can_view_trip(user_id, trip):
+      raise TripServiceError(TripServiceErrorCode.TRIP_NOT_FOUND)
+    if not trip.cover_path:
+      raise TripServiceError(TripServiceErrorCode.COVER_NOT_FOUND)
+    try:
+      return await self.storage.get_bytes(trip.cover_path)
+    except (ClientError, FileNotFoundError) as error:
+      raise TripServiceError(TripServiceErrorCode.COVER_NOT_FOUND) from error
+
+  async def list_members(
+    self, user_id: UUID, trip_id: UUID
+  ) -> TripMemberListResponse:
+    trip = await self._load_trip(trip_id, with_members=True)
+    if not self.can_view_trip(user_id, trip):
+      raise TripServiceError(TripServiceErrorCode.TRIP_NOT_FOUND)
+    members = await self.trips.list_members(trip_id)
+    emails = await map_user_emails(
+      self.session, [member.user_id for member in members]
+    )
+    items: list[TripMemberResponse] = []
+    for member in members:
+      email = emails.get(member.user_id)
+      if email is None:
+        continue
+      items.append(
+        TripMemberResponse(
+          id=member.id,
+          user_id=member.user_id,
+          email=email,
+          role=member.role,  # type: ignore[arg-type]
+          created_at=member.created_at,
+          updated_at=member.updated_at,
+        )
+      )
+    return TripMemberListResponse(items=items)
+
+  async def add_member(
+    self,
+    user_id: UUID,
+    trip_id: UUID,
+    payload: TripMemberCreateRequest,
+  ) -> TripMemberResponse:
+    trip = await self._require_editable_trip(
+      user_id, trip_id, with_members=True
+    )
+    invitee = await find_verified_user_by_email(
+      self.session, str(payload.email)
+    )
+    if invitee is None:
+      raise TripServiceError(TripServiceErrorCode.USER_NOT_FOUND)
+    existing = await self.trips.get_member(trip.id, invitee.id)
+    if existing is not None:
+      raise TripServiceError(TripServiceErrorCode.ALREADY_A_MEMBER)
+
+    now = utc_now()
+    member = TripMember(
+      id=uuid4(),
+      trip_id=trip.id,
+      user_id=invitee.id,
+      role='member',
+      created_at=now,
+      updated_at=now,
+    )
+    self.trips.add_member(member)
+    trip.updated_at = now
+    await self.session.commit()
+    await self.session.refresh(member)
+    return TripMemberResponse(
+      id=member.id,
+      user_id=member.user_id,
+      email=invitee.email,
+      role='member',
+      created_at=member.created_at,
+      updated_at=member.updated_at,
+    )
+
+  async def remove_member(
+    self, user_id: UUID, trip_id: UUID, member_user_id: UUID
+  ) -> None:
+    trip = await self._require_editable_trip(
+      user_id, trip_id, with_members=True
+    )
+    member = await self.trips.get_member(trip.id, member_user_id)
+    if member is None:
+      raise TripServiceError(TripServiceErrorCode.MEMBER_NOT_FOUND)
+    if member.role == 'owner':
+      raise TripServiceError(TripServiceErrorCode.CANNOT_REMOVE_OWNER)
+    await self.session.delete(member)
+    trip.updated_at = utc_now()
+    await self.session.commit()
 
   async def create_activity(
     self,
@@ -385,7 +551,7 @@ class TripService:
     trip_id: UUID,
     payload: TripActivityCreate,
   ) -> TripActivityResponse:
-    trip = await self._require_active_trip(user_id, trip_id)
+    trip = await self._require_editable_trip(user_id, trip_id)
     _validate_activity_time(payload.start_minute, payload.end_minute)
     _validate_activity_within_trip(trip, payload.activity_date)
     now = utc_now()
@@ -413,7 +579,7 @@ class TripService:
     activity_id: UUID,
     payload: TripActivityUpdate,
   ) -> TripActivityResponse:
-    trip = await self._require_active_trip(user_id, trip_id)
+    trip = await self._require_editable_trip(user_id, trip_id)
     activity = await self.activities.get_by_id(activity_id, trip_id=trip_id)
     if activity is None:
       raise TripServiceError(TripServiceErrorCode.ACTIVITY_NOT_FOUND)
@@ -440,7 +606,7 @@ class TripService:
   async def soft_delete_activity(
     self, user_id: UUID, trip_id: UUID, activity_id: UUID
   ) -> None:
-    trip = await self._require_active_trip(user_id, trip_id)
+    trip = await self._require_editable_trip(user_id, trip_id)
     activity = await self.activities.get_by_id(activity_id, trip_id=trip_id)
     if activity is None:
       raise TripServiceError(TripServiceErrorCode.ACTIVITY_NOT_FOUND)
@@ -454,7 +620,7 @@ class TripService:
   async def restore_activity(
     self, user_id: UUID, trip_id: UUID, activity_id: UUID
   ) -> TripActivityResponse:
-    trip = await self._require_active_trip(user_id, trip_id)
+    trip = await self._require_editable_trip(user_id, trip_id)
     activity = await self.activities.get_by_id(
       activity_id, trip_id=trip_id, include_deleted=True
     )
@@ -473,21 +639,40 @@ class TripService:
     await self.session.refresh(activity)
     return _activity_response(activity)
 
-  async def _require_active_trip(
+  async def _load_trip(
+    self,
+    trip_id: UUID,
+    *,
+    include_deleted: bool = False,
+    with_activities: bool = False,
+    with_members: bool = False,
+  ) -> Trip:
+    trip = await self.trips.get_by_id(
+      trip_id,
+      include_deleted=include_deleted,
+      with_activities=with_activities,
+      with_members=with_members,
+    )
+    if trip is None:
+      raise TripServiceError(TripServiceErrorCode.TRIP_NOT_FOUND)
+    return trip
+
+  async def _require_editable_trip(
     self,
     user_id: UUID,
     trip_id: UUID,
     *,
     with_activities: bool = False,
+    with_members: bool = True,
   ) -> Trip:
-    trip = await self.trips.get_by_id(
+    trip = await self._load_trip(
       trip_id,
-      user_id=user_id,
       include_deleted=True,
       with_activities=with_activities,
+      with_members=with_members,
     )
-    if trip is None:
-      raise TripServiceError(TripServiceErrorCode.TRIP_NOT_FOUND)
     if trip.deleted_at is not None:
       raise TripServiceError(TripServiceErrorCode.TRIP_DELETED)
+    if not self.can_edit_trip(user_id, trip):
+      raise TripServiceError(TripServiceErrorCode.FORBIDDEN)
     return trip

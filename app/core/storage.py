@@ -28,11 +28,11 @@ class ObjectStorage(Protocol):
     key: str,
     body: bytes,
     content_type: str,
-  ) -> str: ...
+  ) -> None: ...
+
+  async def get_bytes(self, key: str) -> tuple[bytes, str]: ...
 
   async def delete_object(self, key: str) -> None: ...
-
-  def public_url_for(self, key: str) -> str: ...
 
 
 def cover_object_key(
@@ -54,14 +54,12 @@ class S3ObjectStorage:
     secret_key: str,
     bucket: str,
     region: str,
-    public_base_url: str,
   ) -> None:
     self._endpoint_url = endpoint_url.rstrip('/')
     self._access_key = access_key
     self._secret_key = secret_key
     self._bucket = bucket
     self._region = region
-    self._public_base_url = public_base_url.rstrip('/')
     self._session = aioboto3.Session()
 
   @asynccontextmanager
@@ -88,7 +86,7 @@ class S3ObjectStorage:
     key: str,
     body: bytes,
     content_type: str,
-  ) -> str:
+  ) -> None:
     await self.ensure_bucket()
     async with self._client() as client:
       await client.put_object(
@@ -97,7 +95,13 @@ class S3ObjectStorage:
         Body=body,
         ContentType=content_type,
       )
-    return self.public_url_for(key)
+
+  async def get_bytes(self, key: str) -> tuple[bytes, str]:
+    async with self._client() as client:
+      response = await client.get_object(Bucket=self._bucket, Key=key)
+      body = await response['Body'].read()
+      content_type = response.get('ContentType') or 'application/octet-stream'
+      return body, content_type
 
   async def delete_object(self, key: str) -> None:
     async with self._client() as client:
@@ -105,9 +109,6 @@ class S3ObjectStorage:
         await client.delete_object(Bucket=self._bucket, Key=key)
       except ClientError:
         return
-
-  def public_url_for(self, key: str) -> str:
-    return f'{self._public_base_url}/{key.lstrip("/")}'
 
 
 def create_object_storage() -> S3ObjectStorage:
@@ -117,15 +118,13 @@ def create_object_storage() -> S3ObjectStorage:
     secret_key=settings.s3_secret_key.get_secret_value(),
     bucket=settings.s3_bucket,
     region=settings.s3_region,
-    public_base_url=str(settings.s3_public_base_url),
   )
 
 
 class InMemoryObjectStorage:
   """Test double that keeps objects in process memory."""
 
-  def __init__(self, *, public_base_url: str = 'http://test.local') -> None:
-    self._public_base_url = public_base_url.rstrip('/')
+  def __init__(self) -> None:
     self.objects: dict[str, tuple[bytes, str]] = {}
 
   async def ensure_bucket(self) -> None:
@@ -137,12 +136,14 @@ class InMemoryObjectStorage:
     key: str,
     body: bytes,
     content_type: str,
-  ) -> str:
+  ) -> None:
     self.objects[key] = (body, content_type)
-    return self.public_url_for(key)
+
+  async def get_bytes(self, key: str) -> tuple[bytes, str]:
+    try:
+      return self.objects[key]
+    except KeyError as error:
+      raise FileNotFoundError(key) from error
 
   async def delete_object(self, key: str) -> None:
     self.objects.pop(key, None)
-
-  def public_url_for(self, key: str) -> str:
-    return f'{self._public_base_url}/{key.lstrip("/")}'

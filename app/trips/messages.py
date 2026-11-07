@@ -54,3 +54,27 @@ class TripMessages:
     code=2013,
     message='Activity is not deleted.',
   )
+  FORBIDDEN = MessageResponse(
+    code=2016,
+    message='You do not have access to this trip.',
+  )
+  COVER_NOT_FOUND = MessageResponse(
+    code=2017,
+    message='Trip cover not found.',
+  )
+  MEMBER_NOT_FOUND = MessageResponse(
+    code=2018,
+    message='Trip member not found.',
+  )
+  USER_NOT_FOUND = MessageResponse(
+    code=2019,
+    message='User not found.',
+  )
+  ALREADY_A_MEMBER = MessageResponse(
+    code=2020,
+    message='User is already a trip member.',
+  )
+  CANNOT_REMOVE_OWNER = MessageResponse(
+    code=2021,
+    message='The trip owner cannot be removed.',
+  )

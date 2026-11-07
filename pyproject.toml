@@ -124,9 +124,9 @@ forbidden_modules = [
 ]
 broken_contract_guidance = """
 Cross-domain auth access must go through app.auth.dependencies
-(for example CurrentUser). Do not import auth routers, services,
-repositories, models, schemas, messages, or email helpers from
-sibling domains.
+(for CurrentUser) or app.auth.access (for verified user lookups).
+Do not import auth routers, services, repositories, models,
+schemas, messages, or email helpers from sibling domains.
 """
 
 [[tool.importlinter.contracts]]

@@ -9,8 +9,9 @@ from fastapi import (
   UploadFile,
   status,
 )
+from fastapi.responses import Response
 
-from app.auth.dependencies import CurrentUser
+from app.auth.dependencies import CurrentUser, OptionalCurrentUser
 from app.shared.responses import MessageResponse
 from app.trips.dependencies import TripServiceDep
 from app.trips.messages import TripMessages
@@ -22,6 +23,9 @@ from app.trips.schemas import (
   TripDetailResponse,
   TripListResponse,
   TripListStatus,
+  TripMemberCreateRequest,
+  TripMemberListResponse,
+  TripMemberResponse,
   TripUpdateRequest,
 )
 from app.trips.service import TripServiceError, TripServiceErrorCode
@@ -80,6 +84,30 @@ _ERROR_DETAILS = {
   TripServiceErrorCode.ACTIVITY_NOT_DELETED: (
     status.HTTP_409_CONFLICT,
     TripMessages.ACTIVITY_NOT_DELETED,
+  ),
+  TripServiceErrorCode.FORBIDDEN: (
+    status.HTTP_403_FORBIDDEN,
+    TripMessages.FORBIDDEN,
+  ),
+  TripServiceErrorCode.COVER_NOT_FOUND: (
+    status.HTTP_404_NOT_FOUND,
+    TripMessages.COVER_NOT_FOUND,
+  ),
+  TripServiceErrorCode.MEMBER_NOT_FOUND: (
+    status.HTTP_404_NOT_FOUND,
+    TripMessages.MEMBER_NOT_FOUND,
+  ),
+  TripServiceErrorCode.USER_NOT_FOUND: (
+    status.HTTP_404_NOT_FOUND,
+    TripMessages.USER_NOT_FOUND,
+  ),
+  TripServiceErrorCode.ALREADY_A_MEMBER: (
+    status.HTTP_409_CONFLICT,
+    TripMessages.ALREADY_A_MEMBER,
+  ),
+  TripServiceErrorCode.CANNOT_REMOVE_OWNER: (
+    status.HTTP_400_BAD_REQUEST,
+    TripMessages.CANNOT_REMOVE_OWNER,
   ),
 }
 
@@ -155,11 +183,13 @@ async def create_draft(
 @router.get('/{trip_id}', response_model=TripDetailResponse)
 async def get_trip(
   trip_id: UUID,
-  current_user: CurrentUser,
+  current_user: OptionalCurrentUser,
   service: TripServiceDep,
 ) -> TripDetailResponse:
   try:
-    return await service.get_trip(current_user.id, trip_id)
+    return await service.get_trip(
+      current_user.id if current_user else None, trip_id
+    )
   except TripServiceError as error:
     raise _http_exception_for(error) from error
 
@@ -218,6 +248,21 @@ async def restore_trip(
     raise _http_exception_for(error) from error
 
 
+@router.get('/{trip_id}/cover')
+async def get_cover(
+  trip_id: UUID,
+  current_user: OptionalCurrentUser,
+  service: TripServiceDep,
+) -> Response:
+  try:
+    body, content_type = await service.get_cover_bytes(
+      current_user.id if current_user else None, trip_id
+    )
+  except TripServiceError as error:
+    raise _http_exception_for(error) from error
+  return Response(content=body, media_type=content_type)
+
+
 @router.post('/{trip_id}/cover', response_model=TripDetailResponse)
 async def upload_cover(
   trip_id: UUID,
@@ -248,6 +293,52 @@ async def remove_cover(
     return await service.remove_cover(current_user.id, trip_id)
   except TripServiceError as error:
     raise _http_exception_for(error) from error
+
+
+@router.get('/{trip_id}/members', response_model=TripMemberListResponse)
+async def list_members(
+  trip_id: UUID,
+  current_user: CurrentUser,
+  service: TripServiceDep,
+) -> TripMemberListResponse:
+  try:
+    return await service.list_members(current_user.id, trip_id)
+  except TripServiceError as error:
+    raise _http_exception_for(error) from error
+
+
+@router.post(
+  '/{trip_id}/members',
+  response_model=TripMemberResponse,
+  status_code=status.HTTP_201_CREATED,
+)
+async def add_member(
+  trip_id: UUID,
+  payload: TripMemberCreateRequest,
+  current_user: CurrentUser,
+  service: TripServiceDep,
+) -> TripMemberResponse:
+  try:
+    return await service.add_member(current_user.id, trip_id, payload)
+  except TripServiceError as error:
+    raise _http_exception_for(error) from error
+
+
+@router.delete(
+  '/{trip_id}/members/{member_user_id}',
+  response_model=MessageResponse,
+)
+async def remove_member(
+  trip_id: UUID,
+  member_user_id: UUID,
+  current_user: CurrentUser,
+  service: TripServiceDep,
+) -> MessageResponse:
+  try:
+    await service.remove_member(current_user.id, trip_id, member_user_id)
+  except TripServiceError as error:
+    raise _http_exception_for(error) from error
+  return MessageResponse(code=2022, message='Trip member removed.')
 
 
 @router.post(

@@ -2,12 +2,14 @@ from datetime import date
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, EmailStr, Field
 
 from app.core.datetime import UtcInstant
 
 TripPace = Literal['relaxed', 'balanced', 'active']
 TripLifecycle = Literal['draft', 'published']
+TripVisibility = Literal['private', 'public']
+TripMemberRole = Literal['owner', 'member']
 ActivityType = Literal['explore', 'meal', 'travel', 'stay', 'free']
 TripListStatus = Literal['all', 'upcoming', 'past']
 
@@ -50,6 +52,7 @@ class TripCreateRequest(BaseModel):
   end_date: date | None = None
   pace: TripPace | None = None
   timezone: str = Field(default='Asia/Ho_Chi_Minh', min_length=1, max_length=64)
+  visibility: TripVisibility = 'private'
   note: str = Field(default='', max_length=1000)
 
 
@@ -61,6 +64,7 @@ class TripUpdateRequest(BaseModel):
   end_date: date | None = None
   pace: TripPace | None = None
   timezone: str | None = Field(default=None, min_length=1, max_length=64)
+  visibility: TripVisibility | None = None
   note: str | None = Field(default=None, max_length=1000)
 
 
@@ -74,6 +78,7 @@ class TripCardResponse(BaseModel):
   pace: TripPace | None
   timezone: str
   lifecycle: TripLifecycle
+  visibility: TripVisibility
   cover_url: str | None
   status: Literal['upcoming', 'past'] | None
   duration_days: int | None
@@ -94,3 +99,20 @@ class TripListResponse(BaseModel):
   total: int
   limit: int
   offset: int
+
+
+class TripMemberCreateRequest(BaseModel):
+  email: EmailStr
+
+
+class TripMemberResponse(BaseModel):
+  id: UUID
+  user_id: UUID
+  email: str
+  role: TripMemberRole
+  created_at: UtcInstant
+  updated_at: UtcInstant
+
+
+class TripMemberListResponse(BaseModel):
+  items: list[TripMemberResponse]
