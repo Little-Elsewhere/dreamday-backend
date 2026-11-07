@@ -8,6 +8,7 @@
     "**/.ruff_cache/**",
     "**/.import_linter_cache/**",
     "**/.mypy_cache/**",
+    "**/migrations/**",
     "**/.github/workflows/ci.yml",
     "**/.github/workflows/cd.yml",
     "**/.pre-commit-config.yaml"

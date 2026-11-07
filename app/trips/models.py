@@ -11,6 +11,7 @@ from sqlalchemy import (
   Integer,
   String,
   Text,
+  UniqueConstraint,
   Uuid,
   func,
   text,
@@ -22,6 +23,8 @@ from app.core.types import UtcDateTime
 
 TRIP_PACES = ('relaxed', 'balanced', 'active')
 TRIP_LIFECYCLES = ('draft', 'published')
+TRIP_VISIBILITIES = ('private', 'public')
+TRIP_MEMBER_ROLES = ('owner', 'member')
 ACTIVITY_TYPES = ('explore', 'meal', 'travel', 'stay', 'free')
 DEFAULT_TRIP_TIMEZONE = 'Asia/Ho_Chi_Minh'
 
@@ -71,6 +74,12 @@ class Trip(Base):
     default='draft',
     server_default='draft',
   )
+  visibility: Mapped[str] = mapped_column(
+    String(16),
+    nullable=False,
+    default='private',
+    server_default='private',
+  )
   note: Mapped[str] = mapped_column(
     Text, nullable=False, default='', server_default=''
   )
@@ -96,6 +105,49 @@ class Trip(Base):
     back_populates='trip',
     cascade='all, delete-orphan',
   )
+  members: Mapped[list[TripMember]] = relationship(
+    back_populates='trip',
+    cascade='all, delete-orphan',
+  )
+
+
+class TripMember(Base):
+  __tablename__ = 'trip_members'
+  __table_args__ = (
+    UniqueConstraint('trip_id', 'user_id', name='uq_trip_members_trip_user'),
+    Index('ix_trip_members_user_id', 'user_id'),
+  )
+
+  id: Mapped[UUID] = mapped_column(
+    Uuid(as_uuid=True), primary_key=True, default=uuid4
+  )
+  trip_id: Mapped[UUID] = mapped_column(
+    Uuid(as_uuid=True),
+    ForeignKey('trips.id', ondelete='CASCADE'),
+    nullable=False,
+  )
+  user_id: Mapped[UUID] = mapped_column(
+    Uuid(as_uuid=True),
+    ForeignKey('users.id', ondelete='CASCADE'),
+    nullable=False,
+  )
+  role: Mapped[str] = mapped_column(
+    String(16),
+    nullable=False,
+    default='member',
+    server_default='member',
+  )
+  created_at: Mapped[datetime] = mapped_column(
+    UtcDateTime, server_default=func.now(), nullable=False
+  )
+  updated_at: Mapped[datetime] = mapped_column(
+    UtcDateTime,
+    server_default=func.now(),
+    onupdate=func.now(),
+    nullable=False,
+  )
+
+  trip: Mapped[Trip] = relationship(back_populates='members')
 
 
 class TripActivity(Base):

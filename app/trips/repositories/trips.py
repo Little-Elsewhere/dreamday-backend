@@ -5,7 +5,7 @@ from sqlalchemy import Select, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.trips.models import Trip, TripActivity
+from app.trips.models import Trip, TripActivity, TripMember
 
 
 class TripRepository:
@@ -15,22 +15,27 @@ class TripRepository:
   def add(self, trip: Trip) -> None:
     self.session.add(trip)
 
+  def add_member(self, member: TripMember) -> None:
+    self.session.add(member)
+
   async def get_by_id(
     self,
     trip_id: UUID,
     *,
-    user_id: UUID,
     include_deleted: bool = False,
     with_activities: bool = False,
+    with_members: bool = False,
   ) -> Trip | None:
-    statement: Select[tuple[Trip]] = select(Trip).where(
-      Trip.id == trip_id,
-      Trip.user_id == user_id,
-    )
+    statement: Select[tuple[Trip]] = select(Trip).where(Trip.id == trip_id)
     if not include_deleted:
       statement = statement.where(Trip.deleted_at.is_(None))
+    options = []
     if with_activities:
-      statement = statement.options(selectinload(Trip.activities))
+      options.append(selectinload(Trip.activities))
+    if with_members:
+      options.append(selectinload(Trip.members))
+    if options:
+      statement = statement.options(*options)
     return await self.session.scalar(statement)
 
   async def get_active_draft(self, user_id: UUID) -> Trip | None:
@@ -41,11 +46,27 @@ class TripRepository:
         Trip.lifecycle == 'draft',
         Trip.deleted_at.is_(None),
       )
-      .options(selectinload(Trip.activities))
+      .options(selectinload(Trip.activities), selectinload(Trip.members))
     )
     return await self.session.scalar(statement)
 
-  async def list_for_user(
+  async def get_member(self, trip_id: UUID, user_id: UUID) -> TripMember | None:
+    statement = select(TripMember).where(
+      TripMember.trip_id == trip_id,
+      TripMember.user_id == user_id,
+    )
+    return await self.session.scalar(statement)
+
+  async def list_members(self, trip_id: UUID) -> list[TripMember]:
+    statement = (
+      select(TripMember)
+      .where(TripMember.trip_id == trip_id)
+      .order_by(TripMember.created_at.asc())
+    )
+    rows = await self.session.scalars(statement)
+    return list(rows.all())
+
+  async def list_for_member(
     self,
     user_id: UUID,
     *,
@@ -56,7 +77,7 @@ class TripRepository:
     limit: int = 6,
     offset: int = 0,
   ) -> tuple[list[Trip], int]:
-    filters = [Trip.user_id == user_id]
+    filters = [TripMember.user_id == user_id]
     if deleted:
       filters.append(Trip.deleted_at.is_not(None))
     else:
@@ -69,19 +90,23 @@ class TripRepository:
       )
 
     if status in {'upcoming', 'past'} and today is not None:
-      # Upcoming: no end_date yet, or end_date >= today
-      # Past: end_date < today
       if status == 'upcoming':
         filters.append(or_(Trip.end_date.is_(None), Trip.end_date >= today))
       else:
         filters.append(Trip.end_date.is_not(None))
         filters.append(Trip.end_date < today)
 
-    count_statement = select(func.count()).select_from(Trip).where(*filters)
+    count_statement = (
+      select(func.count())
+      .select_from(Trip)
+      .join(TripMember, TripMember.trip_id == Trip.id)
+      .where(*filters)
+    )
     total = int(await self.session.scalar(count_statement) or 0)
 
     statement = (
       select(Trip)
+      .join(TripMember, TripMember.trip_id == Trip.id)
       .where(*filters)
       .order_by(Trip.updated_at.desc())
       .limit(limit)
