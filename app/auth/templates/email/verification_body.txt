@@ -1,5 +1,0 @@
-Thanks for creating a Dreamday account. Open the link below to verify your email address:
-
-$verification_link
-
-This link can only be used once and expires soon.
