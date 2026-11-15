@@ -7,6 +7,7 @@ edition = "2024"
 axum = "0.8.9"
 chrono = "0.4.45"
 serde = { version = "1.0.229", features = ["derive"] }
+sqlx = { version = "0.9.0", default-features = false, features = ["runtime-tokio", "tls-rustls", "postgres", "migrate", "macros", "chrono"] }
 thiserror = "2.0.21"
 tokio = { version = "1.54.1", features = ["macros", "rt-multi-thread", "net"] }
 tracing = "0.1.44"
