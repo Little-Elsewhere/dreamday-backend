@@ -5,10 +5,12 @@ use axum::http::{Request, StatusCode};
 use dreamday_backend::build_router;
 use http_body_util::BodyExt;
 use serde_json::{Value, json};
+use sqlx::PgPool;
 use tower::ServiceExt;
 
 async fn get(path: &str) -> (StatusCode, Value) {
-    let app = build_router(common::test_state());
+    let unreachable_db = PgPool::connect_lazy("postgres://127.0.0.1:1/unused").unwrap();
+    let app = build_router(common::test_state(unreachable_db));
     let request = Request::builder().uri(path).body(Body::empty()).unwrap();
 
     let response = app.oneshot(request).await.unwrap();

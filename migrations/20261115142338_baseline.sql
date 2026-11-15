@@ -1,0 +1,1 @@
+-- Baseline: intentionally empty. Tables arrive with the feature migrations.
