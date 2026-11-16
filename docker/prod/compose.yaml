@@ -1,0 +1,21 @@
+name: dreamday-backend-prod
+
+services:
+  backend:
+    image: dreamday-backend:prod
+    build:
+      context: ../..
+      dockerfile: docker/prod/Dockerfile
+    env_file:
+      - .env
+    ports:
+      - "8000:8000"
+    restart: unless-stopped
+    init: true
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
