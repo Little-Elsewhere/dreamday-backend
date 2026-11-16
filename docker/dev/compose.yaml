@@ -1,0 +1,38 @@
+name: dreamday-backend-dev
+
+services:
+  backend-db:
+    image: postgres:18-alpine
+    env_file:
+      - .env
+    environment:
+      TZ: UTC
+      PGTZ: UTC
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - backend_postgres18_data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    image: dreamday-backend:dev
+    build:
+      context: ../..
+      dockerfile: docker/dev/Dockerfile
+    env_file:
+      - .env
+    ports:
+      - "8000:8000"
+    volumes:
+      - ../..:/app
+    depends_on:
+      backend-db:
+        condition: service_healthy
+    init: true
+
+volumes:
+  backend_postgres18_data:
