@@ -22,6 +22,7 @@ cp docker/dev/.env.example docker/dev/.env
 | `APP_PORT` | Defaults to `8000` |
 | `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB` | Only in `docker/dev/.env`; create the dev database. Keep them in sync with `DATABASE_URL` in `.env` and `docker/dev/.env` |
 | `DATABASE_URL` | Connection string the app and `cargo test` use |
+| `DATA_ENCRYPTION_KEY`, `DATA_HMAC_KEY` | 32 random bytes in base64 each, generated with `openssl rand -base64 32`. Personal data is encrypted with them; the app refuses to start without them. The examples hold dev-only keys; production needs its own pair, backed up outside the server, because losing them makes stored personal data unreadable |
 
 ## Development
 
