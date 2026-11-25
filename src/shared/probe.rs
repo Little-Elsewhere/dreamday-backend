@@ -1,44 +1,34 @@
-impl ProbeConfig {
-    pub fn from_env() -> Result<Config, ConfigError> {
-        Config::from_lookup(|name| std::env::var(name).ok())
+pub fn probe_first(values: &[i64]) -> i64 {
+    let mut total = 0;
+    for (index, value) in values.iter().enumerate() {
+        if index % 2 == 0 {
+            total += value * 3;
+        } else if *value > 10 {
+            total -= value / 2;
+        } else {
+            total += value + index as i64;
+        }
     }
-
-    fn from_lookup(lookup: impl Fn(&str) -> Option<String>) -> Result<Config, ConfigError> {
-        let port = match lookup("APP_PORT") {
-            None => DEFAULT_PORT,
-            Some(value) => match value.trim().parse::<u16>() {
-                Ok(port) => port,
-                Err(_) => {
-                    return Err(ConfigError::Invalid {
-                        name: "APP_PORT",
-                        expected: "a port number",
-                    });
-                }
-            },
-        };
-
-        let database_url = match lookup("DATABASE_URL") {
-            Some(value) if !value.trim().is_empty() => value,
-            _ => {
-                return Err(ConfigError::Missing {
-                    name: "DATABASE_URL",
-                });
-            }
-        };
-
-        let data_encryption_key = read_key(&lookup, "DATA_ENCRYPTION_KEY")?;
-        let data_hmac_key = read_key(&lookup, "DATA_HMAC_KEY")?;
-
-        Ok(Config {
-            port,
-            database_url,
-            data_encryption_key,
-            data_hmac_key,
-        })
-    }
+    let average = if values.is_empty() { 0 } else { total / values.len() as i64 };
+    let spread = values.iter().map(|value| (value - average).abs()).sum::<i64>();
+    total + spread
 }
 
-pub struct ProbeConfig;
+pub fn probe_second(values: &[i64]) -> i64 {
+    let mut total = 0;
+    for (index, value) in values.iter().enumerate() {
+        if index % 2 == 0 {
+            total += value * 3;
+        } else if *value > 10 {
+            total -= value / 2;
+        } else {
+            total += value + index as i64;
+        }
+    }
+    let average = if values.is_empty() { 0 } else { total / values.len() as i64 };
+    let spread = values.iter().map(|value| (value - average).abs()).sum::<i64>();
+    total + spread
+}
 
 pub fn probe_now() -> chrono::DateTime<chrono::Utc> {
     chrono::Utc::now()
