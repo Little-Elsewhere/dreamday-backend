@@ -72,3 +72,62 @@ jobs:
 
       - name: Run tests
         run: cargo test --locked
+
+  secrets:
+    name: Secrets
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    env:
+      GITLEAKS_VERSION: 8.30.1
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Install gitleaks
+        working-directory: ${{ runner.temp }}
+        run: |
+          base="https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}"
+          archive="gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          curl -sSfLO "$base/$archive"
+          curl -sSfLO "$base/gitleaks_${GITLEAKS_VERSION}_checksums.txt"
+          grep " $archive\$" "gitleaks_${GITLEAKS_VERSION}_checksums.txt" | sha256sum --check
+          tar -xzf "$archive" gitleaks
+          echo "$PWD" >> "$GITHUB_PATH"
+
+      - name: Scan PR commits
+        run: >
+          gitleaks git --redact --no-banner
+          --log-opts="${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }}"
+
+  commitlint:
+    name: Commitlint
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    env:
+      COMMITLINT_VERSION: 21.2.4
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Install commitlint
+        run: >
+          npm install --no-save --no-audit --no-fund --prefix "$RUNNER_TEMP/commitlint"
+          "@commitlint/cli@$COMMITLINT_VERSION" "@commitlint/config-conventional@$COMMITLINT_VERSION"
+
+      - name: Check PR commit messages
+        run: >
+          "$RUNNER_TEMP/commitlint/node_modules/.bin/commitlint" --verbose
+          --extends "$RUNNER_TEMP/commitlint/node_modules/@commitlint/config-conventional/lib/index.js"
+          --from "${{ github.event.pull_request.base.sha }}"
+          --to "${{ github.event.pull_request.head.sha }}"
+
+  jscpd:
+    name: Duplicated code
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Run jscpd
+        run: npx --yes jscpd@5.4.3
