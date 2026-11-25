@@ -12,5 +12,5 @@ async fn test_database_is_reachable_and_migrated(pool: PgPool) {
         .unwrap();
 
     assert_eq!(answer, 1);
-    assert_eq!(applied, 1);
+    assert_eq!(applied, sqlx::migrate!().iter().count() as i64);
 }
