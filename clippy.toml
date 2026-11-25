@@ -1,0 +1,3 @@
+disallowed-methods = [
+    { path = "chrono::Utc::now", reason = "use the Clock in AppState" },
+]

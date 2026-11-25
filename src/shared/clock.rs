@@ -9,6 +9,7 @@ pub trait Clock: Send + Sync {
 pub struct SystemClock;
 
 impl Clock for SystemClock {
+    #[expect(clippy::disallowed_methods)]
     fn now(&self) -> DateTime<Utc> {
         Utc::now()
     }
@@ -63,6 +64,7 @@ mod tests {
     }
 
     #[test]
+    #[expect(clippy::disallowed_methods)]
     fn system_clock_returns_the_current_time() {
         let before = Utc::now();
 
